@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Administration du Daily</title>
+  <link rel="preconnect" href="https://cdn.discordapp.com">
+  <link rel="stylesheet" href="{{ asset_url('style.css') }}">
+</head>
+<body class="admin-page">
+  <main class="admin-container">
+    <header class="admin-header">
+      <div>
+        <p class="brand">Daily · Administration</p>
+        <h1>Corriger une réponse</h1>
+        <p class="admin-subtitle">Chaque validation recalcule immédiatement les points, séries et classements.</p>
+      </div>
+      <a class="back admin-back" href="{{ back_url }}">Retour au jeu</a>
+    </header>
+
+    {% if saved %}
+      <div class="admin-notice {{ 'win' if saved == 'win' else 'loss' }}" role="status">
+        Correction enregistrée. Le résultat compte maintenant comme
+        <strong>{{ 'une victoire' if saved == 'win' else 'une défaite' }}</strong>.
+      </div>
+    {% endif %}
+
+    <section class="admin-filters" aria-label="Filtres">
+      <label>
+        <span>Date</span>
+        <select id="admin-date">
+          {% for daily_date in dates %}
+            <option value="{{ daily_date }}" {% if daily_date == selected_date %}selected{% endif %}>
+              {{ daily_date }}
+            </option>
+          {% endfor %}
+        </select>
+      </label>
+
+      <nav class="mode-tabs admin-mode-tabs" aria-label="Mode à corriger">
+        {% for tab in mode_tabs %}
+          {% if tab.available %}
+            <a class="mode-tab{% if tab.active %} active{% endif %}" href="{{ tab.url }}"
+               {% if tab.active %}aria-current="page"{% endif %}>
+              <span class="mode-tab-icon">{{ tab.icon }}</span>
+              <span>{{ tab.label }}</span>
+            </a>
+          {% else %}
+            <span class="mode-tab disabled" aria-disabled="true">
+              <span class="mode-tab-icon">{{ tab.icon }}</span>
+              <span>{{ tab.label }}</span>
+            </span>
+          {% endif %}
+        {% endfor %}
+      </nav>
+    </section>
+
+    {% if not dates %}
+      <p class="admin-empty">Aucune tentative n’est encore enregistrée sur ce serveur.</p>
+    {% elif not challenge %}
+      <p class="admin-empty">Aucun défi enregistré pour ce mode à cette date.</p>
+    {% elif not attempts %}
+      <p class="admin-empty">Personne n’a joué à ce mode ce jour-là.</p>
+    {% else %}
+      <section class="admin-attempts" aria-label="Tentatives à corriger">
+        <div class="admin-table-head">
+          <span>Joueur</span>
+          <span>Réponse enregistrée</span>
+          <span>Action</span>
+        </div>
+        {% for attempt in attempts %}
+          <form class="admin-attempt"
+                data-user-id="{{ attempt.user_id }}"
+                data-user-name="{{ attempt.user_name }}">
+            <div class="admin-player">
+              <img src="{{ attempt.avatar_url }}" alt="" loading="lazy">
+              <div>
+                <strong>{{ attempt.user_name }}</strong>
+                <span>
+                  {{ '💀 Hardcore' if attempt.difficulty == 'hardcore' else '😀 Normal' }}
+                  {% if attempt.time_taken_ms %}· {{ format_duration_ms(attempt.time_taken_ms) }}{% endif %}
+                </span>
+              </div>
+              <span class="admin-result {{ 'win' if attempt.correct else 'loss' }}">
+                {{ '✅' if attempt.correct else '❌' }}
+              </span>
+            </div>
+
+            <label class="admin-answer">
+              <span class="sr-only">Réponse de {{ attempt.user_name }}</span>
+              <select name="guessed_id">
+                {% if not attempt.has_known_guess and attempt.guessed_id != 0 %}
+                  <option value="{{ attempt.guessed_id }}" selected>
+                    Réponse actuelle (ID {{ attempt.guessed_id }})
+                  </option>
+                {% endif %}
+                <option value="0" {% if attempt.guessed_id == 0 %}selected{% endif %}>
+                  Réponse inconnue / incorrecte
+                </option>
+                {% for option in options %}
+                  <option value="{{ option.id }}" {% if option.id == attempt.guessed_id %}selected{% endif %}>
+                    {{ option.label }}{% if option.id == challenge.correct_id %} · bonne réponse{% endif %}
+                  </option>
+                {% endfor %}
+              </select>
+            </label>
+
+            <button type="submit" class="admin-save">Enregistrer</button>
+          </form>
+        {% endfor %}
+      </section>
+    {% endif %}
+  </main>
+
+  <script>
+    window.ADMIN_DAILY = {
+      token: {{ token | tojson }},
+      date: {{ selected_date | tojson }},
+      mode: {{ mode | tojson }}
+    };
+  </script>
+  <script src="{{ asset_url('admin.js') }}"></script>
+</body>
+</html>

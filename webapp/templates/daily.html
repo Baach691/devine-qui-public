@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Daily du {{ date_display }}</title>
+  <link rel="preconnect" href="https://cdn.discordapp.com">
+  <link rel="stylesheet" href="{{ asset_url('style.css') }}">
+</head>
+<body data-has-attempt="{{ '1' if attempt else '0' }}">
+  <div class="layout">
+  <main class="container">
+
+    <header class="header">
+      <div class="brand">{{ '✍️ Daily' if is_phrase else '🌞 Daily' }}</div>
+      <h1 class="title">{{ page_title }}</h1>
+      <p class="date">{{ date_display }}</p>
+      <nav class="mode-tabs" aria-label="Modes de jeu">
+        {% for tab in mode_tabs %}
+          {% if tab.available %}
+            <a
+              class="mode-tab{% if tab.active %} active{% endif %}"
+              href="{{ tab.url }}"
+              {% if tab.active %}aria-current="page"{% endif %}>
+              <span class="mode-tab-icon">{{ tab.icon }}</span>
+              <span>{{ tab.label }}</span>
+            </a>
+          {% else %}
+            <span class="mode-tab disabled" aria-disabled="true" title="Mode indisponible">
+              <span class="mode-tab-icon">{{ tab.icon }}</span>
+              <span>{{ tab.label }}</span>
+            </span>
+          {% endif %}
+        {% endfor %}
+        {% if is_admin %}
+          <a class="mode-tab admin-tab" href="{{ admin_url }}">
+            <span class="mode-tab-icon">⚙️</span>
+            <span>Admin</span>
+          </a>
+        {% endif %}
+      </nav>
+      {% if not attempt %}
+        <div class="timer" id="timer" aria-live="polite" title="Temps écoulé" hidden>⏱ 0s</div>
+      {% elif attempt and attempt.get('time_taken_ms') %}
+        <div class="timer locked" title="Ton temps de réponse">⏱ {{ format_duration_ms(attempt['time_taken_ms']) }}</div>
+      {% endif %}
+    </header>
+
+    {% if not attempt %}
+      <section class="start-card" id="start-card"
+               data-hardcore-enabled="{{ '1' if hardcore_enabled else '0' }}"
+               data-locked="{{ locked_difficulty or '' }}">
+        <p class="start-kicker">Prêt ?</p>
+        <h2>Le chrono démarre quand tu cliques.</h2>
+        <p>
+          {% if is_phrase %}
+            L'utilisateur mystère et les 4 phrases restent masqués jusqu'au départ.
+          {% elif is_media %}
+            Le média mystère et les propositions restent masqués jusqu'au départ.
+          {% else %}
+            Le message mystère et les propositions restent masqués jusqu'au départ.
+          {% endif %}
+          Tu gardes toujours un seul essai.
+        </p>
+
+        {% if hardcore_enabled %}
+          <div class="diff-toggle" id="diff-toggle" role="group" aria-label="Difficulté">
+            <button type="button" class="diff-btn" data-difficulty="normal"
+                    {% if locked_difficulty and locked_difficulty != 'normal' %}disabled{% endif %}>
+              😀 Mode Normal
+            </button>
+            <button type="button" class="diff-btn" data-difficulty="hardcore"
+                    {% if locked_difficulty and locked_difficulty != 'hardcore' %}disabled{% endif %}>
+              💀 Mode Hardcore
+            </button>
+          </div>
+          <p class="diff-explain" id="diff-explain">
+            <strong>Hardcore</strong> : aucune proposition affichée. Tu tapes toi-même
+            le pseudo dans une barre de recherche, et tu n'as que
+            <strong>{{ hardcore_seconds }} secondes</strong> ⏱ (au-delà = perdu).
+            Plus dur, mais ça vaut <strong>2 points</strong> (Normal : 1 point).
+          </p>
+          {% if locked_difficulty %}
+            <p class="diff-locked">🔒 Difficulté verrouillée : <strong>{{ locked_difficulty }}</strong> (déjà démarrée).</p>
+          {% endif %}
+        {% endif %}
+
+        <button class="start-button" id="start-game" type="button">Jouer</button>
+      </section>
+    {% endif %}
+
+    <section class="message-card{% if is_media %} media-card{% endif %}" id="message-card"
+             aria-label="{{ 'Question' if is_phrase else ('Média mystère' if is_media else 'Message mystère') }}"
+             {% if not attempt %}hidden{% endif %}>
+      {% if is_phrase %}
+        <p class="phrase-question">
+          <img class="subject-avatar" src="{{ subject_avatar_url }}" alt="" loading="lazy">
+          <span>Quelle phrase a été écrite par <strong>{{ subject_name }}</strong> ?</span>
+        </p>
+      {% elif is_media %}
+        <p class="media-question">Qui a envoyé ce média ?</p>
+        {% if media_is_video %}
+          <video id="daily-media" class="daily-media" src="{{ media_url }}" controls preload="auto" playsinline></video>
+        {% else %}
+          <img id="daily-media" class="daily-media" src="{{ media_url }}" alt="média mystère"
+               decoding="async"
+               onerror="this.insertAdjacentHTML('afterend','&lt;a class=media-fallback href=&quot;{{ media_url }}&quot; target=_blank rel=noopener&gt;Ouvrir le média ↗&lt;/a&gt;'); this.remove();">
+        {% endif %}
+      {% else %}
+        <blockquote>{{ message_content }}</blockquote>
+      {% endif %}
+    </section>
+
+    {% if attempt %}
+      <section class="result" id="result">
+        <h2>{{ '✅ Bien joué !' if attempt.correct else '❌ Raté.' }}</h2>
+        {% if is_phrase %}
+          <p>C'était la phrase de <strong>{{ subject_name }}</strong>.</p>
+        {% else %}
+          <p>C'était <strong>{{ correct_author_name }}</strong>.</p>
+        {% endif %}
+      </section>
+    {% endif %}
+
+    {# Anti-triche Hardcore : on ne met les propositions dans le DOM que si le
+       joueur est en Normal (déjà joué en normal, ou difficulté verrouillée
+       normal), OU s'il a déjà joué en Hardcore (reveal a posteriori, masqué
+       derrière un bouton). En Hardcore avant de répondre, le JS les charge à la
+       demande via /daily/options (refusé si verrou hardcore). #}
+    {% set played_hardcore = attempt and attempt.difficulty == 'hardcore' %}
+    {% set show_options = attempt
+                          or (not attempt and locked_difficulty == 'normal') %}
+    {% if played_hardcore %}
+      <button class="reveal-options-btn" id="reveal-options-btn" type="button">
+        👁️ Voir les propositions du mode Normal (et les %)
+      </button>
+    {% endif %}
+    <section
+      class="options{% if not attempt %} prestart{% endif %}{% if attempt %} revealed{% endif %}"
+      id="options"
+      aria-label="Propositions"
+      {% if not attempt or played_hardcore %}hidden aria-hidden="true"{% endif %}>
+      {% if show_options %}
+        {% for opt in options %}
+          <button
+            class="option
+              {%- if attempt %} disabled
+                {%- if opt.id == correct_author_id %} correct
+                {%- elif opt.id == attempt.guessed_id and not attempt.correct %} wrong
+                {%- endif -%}
+              {%- endif %}"
+            data-id="{{ opt.id }}">
+            {% if opt.avatar_url %}
+              <img class="option-avatar{% if opt.reveal_only %} reveal-avatar{% endif %}" src="{{ opt.avatar_url }}" alt="" loading="lazy">
+            {% endif %}
+            <span class="option-label">{{ opt.label }}</span>
+            {% if attempt %}
+              {% if opt.id == correct_author_id %}
+                <span class="option-icon">✅</span>
+              {% elif opt.id == attempt.guessed_id %}
+                <span class="option-icon">❌</span>
+              {% endif %}
+              {% if opt.pct is not none %}
+                <span class="option-pct" title="Part des joueurs ayant choisi cette réponse">{{ opt.pct }}%</span>
+              {% endif %}
+            {% endif %}
+          </button>
+        {% endfor %}
+      {% endif %}
+    </section>
+
+    {% if hardcore_enabled %}
+      <section class="hardcore-search" id="hardcore-search" hidden aria-label="Saisie du pseudo">
+        <label class="hc-label" for="hc-input">{% if is_media %}Qui a envoyé ce média ?{% else %}Qui a écrit ce message ?{% endif %} Écris le pseudo :</label>
+        <div class="hc-row">
+          <input type="text" id="hc-input" class="hc-input" autocomplete="off"
+                 placeholder="Tape un nom ou un surnom…" spellcheck="false"
+                 role="combobox" aria-expanded="false" aria-autocomplete="list"
+                 aria-controls="hc-suggestions">
+          <button type="button" id="hc-submit" class="hc-submit">Valider</button>
+        </div>
+        <ul class="hc-suggestions" id="hc-suggestions" role="listbox" hidden></ul>
+        <p class="hc-preview" id="hc-preview" aria-live="polite" hidden></p>
+        <p class="hc-hint">Choisis un nom dans la liste, ou tape (noms/surnoms, fautes de frappe tolérées). Le membre qui sera envoyé est confirmé avant que tu valides. 1 seul essai.</p>
+      </section>
+    {% endif %}
+
+    <section class="context" id="context" hidden>
+      <h3>📜 Contexte de la conversation</h3>
+      <div class="context-loading" id="context-loading">Chargement de l'historique…</div>
+      <ul class="context-list" id="context-list" hidden></ul>
+      <p class="context-empty" id="context-empty" hidden>
+        Pas de contexte disponible (salon inaccessible ou messages supprimés).
+      </p>
+    </section>
+
+    <section class="stats" id="stats">
+      <div class="stat-card">
+        <div class="stat-value" id="streak">{{ current_streak }}</div>
+        <div class="stat-label" id="streak-label">{{ streak_emoji(current_streak) }} Streak</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value" id="best">{{ best_streak }}</div>
+        <div class="stat-label">🏆 Record</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value" id="today-count">{% if attempt %}{{ total_count }}{% else %}—{% endif %}</div>
+        <div class="stat-label">👥 Aujourd'hui</div>
+      </div>
+    </section>
+
+    <section class="players" id="players" {% if not attempt %}hidden{% endif %}>
+      <h3>📋 Tentatives d'aujourd'hui <span class="count">{% if attempt %}({{ correct_count }} ✅ / {{ total_count }}){% endif %}</span></h3>
+      <ul class="player-list" id="player-list">
+        {# On ne rend la liste côté serveur que si le joueur a déjà joué.
+           Sinon elle reste vide (pas de noms dans le DOM) et sera remplie
+           par le JS après la réponse. #}
+        {% if attempt %}
+          {% for r in results %}
+            <li class="player {{ 'win' if r.correct else 'lose' }}">
+              <img class="avatar" src="{{ r.avatar_url }}" alt="" loading="lazy">
+              <span class="name">{{ r.user_name }}</span>
+              {% if r.difficulty == 'hardcore' %}
+                <span class="diff-badge" title="Mode Hardcore">💀</span>
+              {% endif %}
+              {% if r.guess_label %}
+                <span class="guess-badge guess-name" title="Sa réponse">{{ r.guess_label }}</span>
+              {% endif %}
+              {% if r.time_taken_str %}
+                <span class="time-badge">{{ r.time_taken_str }}</span>
+              {% endif %}
+              <span class="status">{{ '✅' if r.correct else '❌' }}</span>
+            </li>
+          {% endfor %}
+          {% if not results %}
+            <li class="player empty">Personne n'a encore tenté aujourd'hui.</li>
+          {% endif %}
+        {% endif %}
+      </ul>
+    </section>
+
+    <footer class="footer">
+      <span>Un seul essai par mode et par jour · Tu reviens demain ?</span>
+      <a class="back" href="discord://">Retour à Discord</a>
+    </footer>
+  </main>
+
+  <aside class="sidebar" id="sidebar">
+    <h3 class="sidebar-title">🏆 Classement</h3>
+    <ol class="lb-list" id="lb-list">
+      {# Anti-triche : classement masqué tant qu'on n'a pas joué (les streaks
+         laissent deviner si le défi est piégeux). Rempli par le JS après réponse. #}
+      {% if attempt %}
+        {% for e in leaderboard %}
+          <li class="lb-row{% if e.is_me %} me{% endif %}">
+            <span class="lb-rank">{{ ['🥇','🥈','🥉'][e.rank-1] if e.rank <= 3 else e.rank ~ '.' }}</span>
+            <img class="lb-avatar" src="{{ e.avatar_url }}" alt="" loading="lazy">
+            <span class="lb-name">{{ e.name }}</span>
+            <span class="lb-pts">{{ e.points }} pts</span>
+            <span class="lb-score">{{ e.correct }}/{{ e.total }}</span>
+            <span class="lb-streak">
+              {%- if e.current_streak > 0 -%}{{ streak_emoji(e.current_streak) }}+{{ e.current_streak }}
+              {%- elif e.current_loss_streak > 0 -%}{{ loss_streak_emoji(e.current_loss_streak) }}-{{ e.current_loss_streak }}
+              {%- else -%}🧊{%- endif -%}
+            </span>
+          </li>
+        {% endfor %}
+        {% if not leaderboard %}
+          <li class="lb-empty">Pas encore de joueurs classés.</li>
+        {% endif %}
+      {% else %}
+        <li class="lb-empty lb-locked">🔒 Joue pour débloquer le classement</li>
+      {% endif %}
+    </ol>
+  </aside>
+  </div>
+
+  <script>
+    window.DAILY = {
+      token: {{ token | tojson }},
+      hasAttempt: {{ 'true' if attempt else 'false' }},
+      isPhrase: {{ 'true' if is_phrase else 'false' }},
+      subjectName: {{ (subject_name or '') | tojson }},
+      hardcoreEnabled: {{ 'true' if hardcore_enabled else 'false' }},
+      lockedDifficulty: {{ (locked_difficulty or '') | tojson }},
+      hardcoreMs: {{ (hardcore_seconds or 10) * 1000 }},
+      isMedia: {{ 'true' if is_media else 'false' }},
+      mediaUrl: {{ (media_url or '') | tojson }},
+      mediaIsVideo: {{ 'true' if media_is_video else 'false' }},
+    };
+  </script>
+  <script src="{{ asset_url('script.js') }}"></script>
+</body>
+</html>

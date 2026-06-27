@@ -1,0 +1,24 @@
+# Secrets & config locale
+.env
+.webapp_secret
+# Alias des membres (contient des pseudos réels — voir aliases.example.json)
+aliases.local.json
+
+# Base de données
+*.db
+*.sqlite
+*.sqlite3
+*.db-wal
+*.db-shm
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+
+# OS / éditeurs
+.DS_Store
+.idea/
+.vscode/

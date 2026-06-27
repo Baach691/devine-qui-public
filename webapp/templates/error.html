@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ title or 'Oups' }}</title>
+  <link rel="stylesheet" href="{{ asset_url('style.css') }}">
+</head>
+<body>
+  <main class="container container--centered">
+    <header class="header">
+      <div class="brand">🌞 Daily</div>
+      <h1 class="title">{{ title or 'Oups' }}</h1>
+    </header>
+    <section class="message-card">
+      <p style="font-family: var(--serif); font-size: 1.1rem; text-align: center;">
+        {{ message }}
+      </p>
+    </section>
+    <footer class="footer">
+      <a class="back" href="discord://">Retour à Discord</a>
+    </footer>
+  </main>
+</body>
+</html>

@@ -1,0 +1,6 @@
+{
+  "_comment": "Copie ce fichier en 'aliases.local.json' (non versionné) et remplis-le avec tes vrais membres. Clé = nom affiché Discord (global_name) ; valeurs = surnoms/variantes acceptés en mode Hardcore. Absent => aucun alias (le Hardcore résout alors seulement le nom affiché).",
+  "NomAffiché1": ["surnom1", "variante1", "abreviation1"],
+  "NomAffiché2": ["surnom2"],
+  "PseudoXYZ": ["xyz", "x"]
+}

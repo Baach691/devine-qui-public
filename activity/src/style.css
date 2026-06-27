@@ -1,0 +1,92 @@
+:root {
+  --bg: #1e1f22;
+  --card: #2b2d31;
+  --text: #f2f3f5;
+  --muted: #b5bac1;
+  --accent: #5865f2;
+  --ok: #3ba55d;
+  --err: #ed4245;
+  --sans: "gg sans", "Helvetica Neue", Helvetica, Arial, sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
+}
+
+#app {
+  min-height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+}
+
+.status {
+  color: var(--muted);
+  font-size: 1rem;
+}
+
+.card {
+  width: min(420px, 100%);
+  background: var(--card);
+  border-radius: 18px;
+  padding: 2rem 1.5rem;
+  text-align: center;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+  animation: pop 0.3s ease-out;
+}
+
+.avatar {
+  width: 88px;
+  height: 88px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 3px solid var(--accent);
+  margin-bottom: 0.5rem;
+}
+
+.kicker {
+  color: var(--muted);
+  font-size: 0.85rem;
+  letter-spacing: 0.04em;
+  margin: 0 0 0.75rem;
+}
+
+.card h1 {
+  font-size: 1rem;
+  font-weight: 500;
+  color: var(--muted);
+  margin: 0;
+}
+
+.name {
+  font-size: 1.75rem;
+  font-weight: 800;
+  margin: 0.25rem 0 1rem;
+}
+
+.ok { color: var(--ok); font-size: 0.9rem; margin: 0; }
+
+.card.err h1 { color: var(--err); font-weight: 700; font-size: 1.2rem; }
+.card.err pre {
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: rgba(0, 0, 0, 0.25);
+  padding: 0.75rem;
+  border-radius: 10px;
+  color: var(--text);
+  font-size: 0.85rem;
+  text-align: left;
+}
+.hint { color: var(--muted); font-size: 0.8rem; }
+
+@keyframes pop {
+  from { transform: scale(0.96); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
