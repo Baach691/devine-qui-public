@@ -50,7 +50,9 @@ _realtime_lock = threading.Lock()
 _live_presence: Dict[PresenceKey, dict] = {}
 _presence_lock = threading.Lock()
 _PRESENCE_TTL_SECONDS = 45
-_MAX_MEDIA_HARDCORE_BONUS_SECONDS = 10 * 60
+_MEDIA_HARDCORE_BASE_SECONDS = 25
+_MEDIA_HARDCORE_GIF_BONUS_SECONDS = 15
+_MEDIA_HARDCORE_MAX_SECONDS = 2 * 60 + 30
 
 DAILY_MODE_SPECS = (
     (database.MODE_AUTHOR, "🌞", "Qui a écrit ça ?"),
@@ -337,6 +339,7 @@ def _load_challenge(guild_id: int, today: str, mode: str) -> Optional[dict]:
             "is_media": False,
             "media_url": "",
             "media_is_video": False,
+            "media_is_gif": False,
             "subject_id": d["author_id"],
             "subject_name": d["author_name"],
             "subject_avatar_url": avatar_for_user(guild_id, d["author_id"]),
@@ -357,6 +360,7 @@ def _load_challenge(guild_id: int, today: str, mode: str) -> Optional[dict]:
         "is_media": is_media,
         "media_url": d["content"] if is_media else "",
         "media_is_video": _is_video_url(d["content"]) if is_media else False,
+        "media_is_gif": _is_gif_url(d["content"]) if is_media else False,
         "subject_id": None,
         "subject_name": None,
         "subject_avatar_url": "",
@@ -369,6 +373,33 @@ def _load_challenge(guild_id: int, today: str, mode: str) -> Optional[dict]:
 def _is_video_url(url: str) -> bool:
     u = (url or "").split("?")[0].lower()
     return u.endswith((".mp4", ".mov", ".webm", ".mkv", ".m4v"))
+
+
+def _is_gif_url(url: str) -> bool:
+    return (url or "").split("?")[0].lower().endswith(".gif")
+
+
+def _hardcore_base_seconds(mode: str) -> int:
+    if mode == database.MODE_MEDIA:
+        return _MEDIA_HARDCORE_BASE_SECONDS
+    return config.HARDCORE_TIME_LIMIT
+
+
+def _hardcore_limit_seconds(
+    guild_id: int,
+    date_str: str,
+    user_id: int,
+    mode: str,
+) -> float:
+    limit = (
+        _hardcore_base_seconds(mode)
+        + database.get_daily_time_bonus_seconds(
+            guild_id, date_str, user_id, mode
+        )
+    )
+    if mode == database.MODE_MEDIA:
+        return min(limit, _MEDIA_HARDCORE_MAX_SECONDS)
+    return limit
 
 
 def _options_view(guild_id: int, options: list, mode: str) -> list:
@@ -987,11 +1018,9 @@ def create_app(bot=None) -> Flask:
             guild_id, today, user_id, mode
         )
         locked_difficulty = stored_difficulty if hardcore_enabled else None
-        hardcore_limit_ms = int(round(1000 * (
-            config.HARDCORE_TIME_LIMIT
-            + database.get_daily_time_bonus_seconds(
-                guild_id, today, user_id, mode
-            )
+        hardcore_base_seconds = _hardcore_base_seconds(mode)
+        hardcore_limit_ms = int(round(1000 * _hardcore_limit_seconds(
+            guild_id, today, user_id, mode
         )))
         if _touch_presence(
             guild_id,
@@ -1033,10 +1062,12 @@ def create_app(bot=None) -> Flask:
                 if ch.get("is_media", False) else ""
             ),
             media_is_video=ch.get("media_is_video", False),
+            media_is_gif=ch.get("media_is_gif", False),
             page_title=_titles.get(mode, "Qui a écrit ça ?"),
             hardcore_enabled=hardcore_enabled,
-            hardcore_seconds=config.HARDCORE_TIME_LIMIT,
+            hardcore_seconds=hardcore_base_seconds,
             hardcore_limit_ms=hardcore_limit_ms,
+            media_hardcore_max_ms=_MEDIA_HARDCORE_MAX_SECONDS * 1000,
             locked_difficulty=locked_difficulty,
             subject_name=ch["subject_name"],
             subject_avatar_url=ch["subject_avatar_url"],
@@ -1541,11 +1572,8 @@ def create_app(bot=None) -> Flask:
         timed_out = False
         if difficulty == "hardcore":
             elapsed = database.get_start_elapsed_seconds(guild_id, today, user_id, mode)
-            allowed_seconds = (
-                config.HARDCORE_TIME_LIMIT
-                + database.get_daily_time_bonus_seconds(
-                    guild_id, today, user_id, mode
-                )
+            allowed_seconds = _hardcore_limit_seconds(
+                guild_id, today, user_id, mode
             )
             if elapsed is not None and elapsed > allowed_seconds + 3:
                 timed_out = True
@@ -1639,14 +1667,20 @@ def create_app(bot=None) -> Flask:
                 duration_seconds = float(raw_duration_ms) / 1000
             except (TypeError, ValueError):
                 duration_seconds = 0.0
-            if (
+            max_bonus = (
+                _MEDIA_HARDCORE_MAX_SECONDS
+                - _MEDIA_HARDCORE_BASE_SECONDS
+            )
+            if challenge is not None and challenge.get("media_is_gif"):
+                time_bonus_seconds = _MEDIA_HARDCORE_GIF_BONUS_SECONDS
+            elif (
                 challenge is not None
                 and challenge.get("media_is_video")
                 and math.isfinite(duration_seconds)
             ):
                 time_bonus_seconds = min(
                     max(0.0, duration_seconds),
-                    _MAX_MEDIA_HARDCORE_BONUS_SECONDS,
+                    max_bonus,
                 )
 
         # Enregistre l'heure de départ serveur (non-truquable) ET la difficulté,
@@ -1659,11 +1693,8 @@ def create_app(bot=None) -> Flask:
             difficulty=wanted,
             time_bonus_seconds=time_bonus_seconds,
         )
-        effective_limit_ms = int(round(1000 * (
-            config.HARDCORE_TIME_LIMIT
-            + database.get_daily_time_bonus_seconds(
-                guild_id, today, user_id, mode
-            )
+        effective_limit_ms = int(round(1000 * _hardcore_limit_seconds(
+            guild_id, today, user_id, mode
         )))
         _touch_presence(guild_id, today, user_id, mode, playing=True)
         _publish_realtime((guild_id, today))

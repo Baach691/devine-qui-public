@@ -34,7 +34,8 @@ All tests and examples must use clearly fictional identities and identifiers.
 - [x] Admin corrections and real-time leaderboard updates included.
 - [x] Live presence, three-mode progress and server-side anti-spoiler rules.
 - [x] Three-panel responsive layout and corrected leaderboard alignment.
-- [x] Video duration added to the Hardcore media timer.
+- [x] Hardcore media timer: image 25 s, GIF 40 s, video duration + 25 s, capped
+  at 2 min 30.
 - [x] Rich Presence artwork keys `1` and `2`.
 - [x] Spoiler-free external media viewer through the Activity SDK, without a
   Discord message link, forced download or server-side transcoding.
@@ -43,7 +44,7 @@ All tests and examples must use clearly fictional identities and identifiers.
 - [x] `TERMS.md` and `PRIVACY.md` added.
 - [x] VPS-specific deployment files removed.
 - [x] Final working-tree secret and identity scan.
-- [x] 28 Python tests, syntax checks and Activity build verification.
+- [x] 32 Python tests, syntax checks and Activity build verification.
 - [x] Publish the sanitized root commit.
 
 ## External setup still required

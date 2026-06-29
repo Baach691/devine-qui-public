@@ -95,10 +95,11 @@ La route :
 - propage les headers `Range` nécessaires aux vidéos ;
 - ne transforme pas le serveur en proxy HTTP générique.
 
-En Hardcore, le navigateur lit les métadonnées de la vidéo avant le départ. Sa durée
-est transmise à `/daily/start`, plafonnée à dix minutes puis verrouillée en base avec
-le premier départ. Le timeout serveur devient donc `durée de la vidéo + délai
-Hardcore`, avec la même marge réseau que les autres modes.
+En Hardcore média, la limite est de 25 secondes pour une image, 40 secondes pour un
+GIF, ou `durée de la vidéo + 25 secondes`. Le total est plafonné à 2 min 30. Pour une
+vidéo, le navigateur lit les métadonnées avant le départ et transmet sa durée à
+`/daily/start`; le serveur la plafonne puis verrouille la limite avec le premier
+départ.
 
 La page propose **Ouvrir le média**, qui lance un lecteur externe ne contenant que
 l'image ou la vidéo proxifiée. Il n'affiche ni le message Discord, ni le salon, ni

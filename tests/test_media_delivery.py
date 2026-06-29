@@ -182,7 +182,7 @@ class MediaDeliveryTests(unittest.TestCase):
                 },
             )
 
-        expected_ms = config.HARDCORE_TIME_LIMIT * 1000 + 24500
+        expected_ms = 25_000 + 24_500
         self.assertEqual(first.status_code, 200)
         self.assertEqual(first.get_json()["hardcore_limit_ms"], expected_ms)
         self.assertEqual(second.get_json()["hardcore_limit_ms"], expected_ms)
@@ -207,8 +207,108 @@ class MediaDeliveryTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(
             response.get_json()["hardcore_limit_ms"],
-            config.HARDCORE_TIME_LIMIT * 1000,
+            25_000,
         )
+
+    def test_gif_hardcore_limit_is_forty_seconds(self):
+        database.get_conn().execute(
+            "UPDATE media_daily SET content = ? WHERE guild_id = 1 AND date = ?",
+            (
+                "https://cdn.discordapp.com/attachments/20/11/loop.gif",
+                today_str(),
+            ),
+        )
+        database.get_conn().commit()
+
+        with self.app.test_client() as client:
+            response = client.post(
+                "/daily/start",
+                json={
+                    "token": self.token,
+                    "difficulty": "hardcore",
+                    "media_duration_ms": 999_000,
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["hardcore_limit_ms"], 40_000)
+        self.assertEqual(
+            database.get_daily_time_bonus_seconds(
+                1, today_str(), 30, database.MODE_MEDIA
+            ),
+            15,
+        )
+
+    def test_image_hardcore_limit_is_twenty_five_seconds(self):
+        database.get_conn().execute(
+            "UPDATE media_daily SET content = ? WHERE guild_id = 1 AND date = ?",
+            (
+                "https://cdn.discordapp.com/attachments/20/11/photo.jpg",
+                today_str(),
+            ),
+        )
+        database.get_conn().commit()
+
+        with self.app.test_client() as client:
+            response = client.post(
+                "/daily/start",
+                json={
+                    "token": self.token,
+                    "difficulty": "hardcore",
+                    "media_duration_ms": 999_000,
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["hardcore_limit_ms"], 25_000)
+
+    def test_image_answer_after_thirty_seconds_times_out(self):
+        database.get_conn().execute(
+            "UPDATE media_daily SET content = ? WHERE guild_id = 1 AND date = ?",
+            (
+                "https://cdn.discordapp.com/attachments/20/11/photo.jpg",
+                today_str(),
+            ),
+        )
+        database.get_conn().commit()
+
+        with self.app.test_client() as client:
+            client.post(
+                "/daily/start",
+                json={"token": self.token, "difficulty": "hardcore"},
+            )
+            database.get_conn().execute(
+                "UPDATE daily_start SET started_at = datetime('now', '-30 seconds') "
+                "WHERE guild_id = 1 AND date = ? AND user_id = 30 AND mode = ?",
+                (today_str(), database.MODE_MEDIA),
+            )
+            database.get_conn().commit()
+            response = client.post(
+                "/daily/answer",
+                json={"token": self.token, "guessed_id": 30},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.get_json()["timed_out"])
+        self.assertFalse(response.get_json()["correct"])
+
+    def test_video_hardcore_limit_is_capped_at_two_minutes_thirty(self):
+        payload = tokens.verify_token(self.token, config.WEBAPP_SECRET)
+        payload["u"] = 31
+        capped_token = tokens.make_token(payload, config.WEBAPP_SECRET)
+
+        with self.app.test_client() as client:
+            response = client.post(
+                "/daily/start",
+                json={
+                    "token": capped_token,
+                    "difficulty": "hardcore",
+                    "media_duration_ms": 300_000,
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["hardcore_limit_ms"], 150_000)
 
     def test_video_bonus_is_used_by_server_timeout(self):
         with self.app.test_client() as client:

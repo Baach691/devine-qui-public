@@ -79,6 +79,8 @@
             le pseudo dans une barre de recherche, et tu n'as que
             {% if is_media and media_is_video %}
               <strong>la durée de la vidéo + {{ hardcore_seconds }} secondes</strong>
+            {% elif is_media and media_is_gif %}
+              <strong>40 secondes</strong>
             {% else %}
               <strong>{{ hardcore_seconds }} secondes</strong>
             {% endif %}
@@ -305,9 +307,11 @@
       lockedDifficulty: {{ (locked_difficulty or '') | tojson }},
       hardcoreBaseMs: {{ (hardcore_seconds or 10) * 1000 }},
       hardcoreMs: {{ hardcore_limit_ms }},
+      mediaHardcoreMaxMs: {{ media_hardcore_max_ms }},
       isMedia: {{ 'true' if is_media else 'false' }},
       mediaUrl: {{ (media_url or '') | tojson }},
       mediaIsVideo: {{ 'true' if media_is_video else 'false' }},
+      mediaIsGif: {{ 'true' if media_is_gif else 'false' }},
       initialRealtimeState: {{ initial_realtime_state | tojson }},
     };
   </script>

@@ -10,8 +10,9 @@ classements et une interface jouable directement dans une Discord Activity.
   - **Qui a écrit ça ?** : retrouver l'auteur d'un message ;
   - **Devine la phrase** : retrouver la phrase écrite par un membre donné ;
   - **Devine le média** : retrouver l'auteur d'une image, d'un GIF ou d'une vidéo.
-- Mode Hardcore pour les modes auteur et média. Pour une vidéo, sa durée complète
-  est ajoutée aux 10 secondes de réponse.
+- Mode Hardcore pour les modes auteur et média. Le média accorde 25 secondes pour
+  une image, 40 secondes pour un GIF, ou la durée de la vidéo + 25 secondes, avec
+  un plafond total de 2 min 30.
 - Média agrandissable ou ouvrable dans un lecteur externe sans révéler le message
   Discord ni son auteur.
 - Temps de réponse calculé côté serveur.

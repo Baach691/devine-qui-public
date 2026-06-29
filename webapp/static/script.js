@@ -101,6 +101,7 @@
   }
 
   const hardcoreBaseMs = window.DAILY?.hardcoreBaseMs || 10000;
+  const mediaHardcoreMaxMs = window.DAILY?.mediaHardcoreMaxMs || 150000;
   let hardcoreLimitMs = window.DAILY?.hardcoreMs || hardcoreBaseMs;
 
   function updateTimer() {
@@ -370,7 +371,16 @@
       && window.DAILY?.isMedia
       && window.DAILY?.mediaIsVideo
     ) {
-      hardcoreLimitMs = hardcoreBaseMs + mediaDurationMs;
+      hardcoreLimitMs = Math.min(
+        hardcoreBaseMs + mediaDurationMs,
+        mediaHardcoreMaxMs,
+      );
+    } else if (
+      difficulty === "hardcore"
+      && window.DAILY?.isMedia
+      && window.DAILY?.mediaIsGif
+    ) {
+      hardcoreLimitMs = hardcoreBaseMs + 15000;
     }
 
     // Verrouille la difficulté côté serveur ; on respecte la valeur effective.
