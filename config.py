@@ -101,6 +101,18 @@ WEBAPP_BASE_URL = os.getenv("WEBAPP_BASE_URL", f"http://{WEBAPP_HOST}:{WEBAPP_PO
 # nombre de viewers simultanés, avec une marge pour les requêtes classiques.
 WEBAPP_THREADS = max(8, _get_int("WEBAPP_THREADS", 64))
 
+# Compatibilité vidéo : les navigateurs qui ne décodent pas la piste d'origine
+# demandent une version H.264/AAC générée par ffmpeg et mise en cache brièvement.
+FFMPEG_PATH = os.getenv("FFMPEG_PATH", "ffmpeg")
+MEDIA_CACHE_DIR = os.getenv(
+    "MEDIA_CACHE_DIR",
+    os.path.join(os.path.dirname(os.path.abspath(DB_PATH)), ".media_cache"),
+)
+MEDIA_CACHE_RETENTION_HOURS = max(
+    1, _get_int("MEDIA_CACHE_RETENTION_HOURS", 48)
+)
+MEDIA_MAX_TRANSCODE_MB = max(1, _get_int("MEDIA_MAX_TRANSCODE_MB", 100))
+
 # Clé secrète pour signer les liens. Priorité : .env. Sinon, on génère un secret
 # UNE fois et on le PERSISTE dans un fichier local (.webapp_secret) → les liens
 # survivent aux redémarrages même sans variable d'environnement.

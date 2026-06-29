@@ -13,6 +13,8 @@ import logging
 import math
 import os
 import queue
+import shutil
+import subprocess
 import threading
 import time
 import urllib.error
@@ -28,6 +30,7 @@ from flask import (
     jsonify,
     render_template,
     request,
+    send_file,
     send_from_directory,
     stream_with_context,
 )
@@ -51,6 +54,9 @@ _live_presence: Dict[PresenceKey, dict] = {}
 _presence_lock = threading.Lock()
 _PRESENCE_TTL_SECONDS = 45
 _MAX_MEDIA_HARDCORE_BONUS_SECONDS = 10 * 60
+_media_cache_locks: Dict[str, threading.Lock] = {}
+_media_cache_locks_guard = threading.Lock()
+_media_cache_last_cleanup = 0.0
 
 DAILY_MODE_SPECS = (
     (database.MODE_AUTHOR, "🌞", "Qui a écrit ça ?"),
@@ -369,6 +375,153 @@ def _load_challenge(guild_id: int, today: str, mode: str) -> Optional[dict]:
 def _is_video_url(url: str) -> bool:
     u = (url or "").split("?")[0].lower()
     return u.endswith((".mp4", ".mov", ".webm", ".mkv", ".m4v"))
+
+
+def _media_cache_path(guild_id: int, date_str: str, message_id: int) -> str:
+    """Chemin privé et stable de la version H.264/AAC d'une vidéo quotidienne."""
+    filename = f"{guild_id}_{date_str}_{message_id}.mp4"
+    return os.path.join(config.MEDIA_CACHE_DIR, filename)
+
+
+def _cleanup_media_cache(force: bool = False) -> None:
+    """Supprime périodiquement les transcodages et fichiers partiels trop anciens."""
+    global _media_cache_last_cleanup
+    now = time.time()
+    if not force and now - _media_cache_last_cleanup < 60 * 60:
+        return
+    _media_cache_last_cleanup = now
+    cutoff = now - config.MEDIA_CACHE_RETENTION_HOURS * 60 * 60
+    try:
+        entries = os.scandir(config.MEDIA_CACHE_DIR)
+    except OSError:
+        return
+    with entries:
+        for entry in entries:
+            try:
+                if entry.is_file() and entry.stat().st_mtime < cutoff:
+                    os.unlink(entry.path)
+            except OSError:
+                pass
+
+
+def _download_media_for_transcode(media_url: str, destination: str) -> None:
+    """Télécharge une pièce jointe Discord avec une limite de taille stricte."""
+    request_headers = {
+        "User-Agent": "DiscordBot (https://github.com/Baach691/daily-guessr, 1.0)"
+    }
+    upstream_request = urllib.request.Request(media_url, headers=request_headers)
+    max_bytes = config.MEDIA_MAX_TRANSCODE_MB * 1024 * 1024
+    total = 0
+    with urllib.request.urlopen(upstream_request, timeout=30) as upstream:
+        declared_size = upstream.headers.get("Content-Length")
+        if declared_size and int(declared_size) > max_bytes:
+            raise ValueError("media_too_large")
+        with open(destination, "wb") as output:
+            os.chmod(destination, 0o600)
+            while True:
+                chunk = upstream.read(64 * 1024)
+                if not chunk:
+                    break
+                total += len(chunk)
+                if total > max_bytes:
+                    raise ValueError("media_too_large")
+                output.write(chunk)
+
+
+def _compatible_video_path(
+    guild_id: int,
+    date_str: str,
+    message_id: int,
+    media_url: str,
+) -> Optional[str]:
+    """Crée une version MP4 H.264/AAC lisible par les navigateurs courants."""
+    cache_path = _media_cache_path(guild_id, date_str, message_id)
+    if os.path.isfile(cache_path) and os.path.getsize(cache_path) > 0:
+        return cache_path
+
+    with _media_cache_locks_guard:
+        media_lock = _media_cache_locks.setdefault(cache_path, threading.Lock())
+
+    with media_lock:
+        if os.path.isfile(cache_path) and os.path.getsize(cache_path) > 0:
+            return cache_path
+
+        ffmpeg = shutil.which(config.FFMPEG_PATH)
+        if ffmpeg is None:
+            log.error(
+                "Version vidéo compatible impossible: ffmpeg introuvable (%s)",
+                config.FFMPEG_PATH,
+            )
+            return None
+
+        os.makedirs(config.MEDIA_CACHE_DIR, mode=0o700, exist_ok=True)
+        try:
+            os.chmod(config.MEDIA_CACHE_DIR, 0o700)
+        except OSError:
+            pass
+        _cleanup_media_cache()
+
+        source_path = f"{cache_path}.source"
+        output_path = f"{cache_path}.part.mp4"
+        try:
+            _download_media_for_transcode(media_url, source_path)
+            result = subprocess.run(
+                [
+                    ffmpeg,
+                    "-nostdin",
+                    "-hide_banner",
+                    "-loglevel",
+                    "error",
+                    "-y",
+                    "-i",
+                    source_path,
+                    "-map",
+                    "0:v:0",
+                    "-map",
+                    "0:a:0?",
+                    "-sn",
+                    "-map_metadata",
+                    "-1",
+                    "-c:v",
+                    "libx264",
+                    "-preset",
+                    "veryfast",
+                    "-crf",
+                    "23",
+                    "-pix_fmt",
+                    "yuv420p",
+                    "-vf",
+                    "scale=trunc(iw/2)*2:trunc(ih/2)*2",
+                    "-c:a",
+                    "aac",
+                    "-b:a",
+                    "128k",
+                    "-movflags",
+                    "+faststart",
+                    output_path,
+                ],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+                text=True,
+                timeout=180,
+                check=False,
+            )
+            if result.returncode != 0 or not os.path.isfile(output_path):
+                details = (result.stderr or "erreur ffmpeg inconnue").strip()[-1000:]
+                log.error("Échec du transcodage vidéo compatible: %s", details)
+                return None
+            os.chmod(output_path, 0o600)
+            os.replace(output_path, cache_path)
+            return cache_path
+        except (OSError, subprocess.SubprocessError, ValueError):
+            log.exception("Impossible de produire la version vidéo compatible")
+            return None
+        finally:
+            for temporary_path in (source_path, output_path):
+                try:
+                    os.unlink(temporary_path)
+                except OSError:
+                    pass
 
 
 def _options_view(guild_id: int, options: list, mode: str) -> list:
@@ -741,6 +894,7 @@ def _activity_member_has_allowed_role(guild_id: int, user_id: int) -> bool:
 
 
 def create_app(bot=None) -> Flask:
+    _cleanup_media_cache(force=True)
     app = Flask(__name__)
     app.config["JSON_AS_ASCII"] = False
     # Les routes ne reçoivent que de petits payloads JSON. Cette limite coupe
@@ -1064,6 +1218,25 @@ def create_app(bot=None) -> Flask:
         if not _is_discord_attachment_url(media_url):
             log.error("URL média Discord refusée: %r", media_url)
             return jsonify({"error": "invalid_media_url"}), 502
+
+        if request.args.get("compat") == "1" and _is_video_url(media_url):
+            compatible_path = _compatible_video_path(
+                guild_id,
+                today_str(),
+                daily["message_id"],
+                media_url,
+            )
+            if compatible_path is not None:
+                response = send_file(
+                    compatible_path,
+                    mimetype="video/mp4",
+                    conditional=True,
+                    etag=True,
+                    max_age=300,
+                )
+                response.headers["Cache-Control"] = "private, max-age=300"
+                return response
+            return jsonify({"error": "compatible_video_unavailable"}), 503
 
         headers = {
             "User-Agent": "DiscordBot (https://github.com/Baach691/daily-guessr, 1.0)"

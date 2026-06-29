@@ -2,6 +2,7 @@ import json
 import os
 import tempfile
 import unittest
+from types import SimpleNamespace
 from unittest import mock
 
 import config
@@ -36,8 +37,10 @@ class MediaDeliveryTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.original_db_path = config.DB_PATH
         self.original_secret = config.WEBAPP_SECRET
+        self.original_media_cache_dir = config.MEDIA_CACHE_DIR
         config.DB_PATH = os.path.join(self.tmp.name, "test.db")
         config.WEBAPP_SECRET = "media-test-secret"
+        config.MEDIA_CACHE_DIR = os.path.join(self.tmp.name, "media-cache")
         if database._conn is not None:
             database._conn.close()
         database._conn = None
@@ -75,6 +78,7 @@ class MediaDeliveryTests(unittest.TestCase):
         database._conn = None
         config.DB_PATH = self.original_db_path
         config.WEBAPP_SECRET = self.original_secret
+        config.MEDIA_CACHE_DIR = self.original_media_cache_dir
         self.tmp.cleanup()
 
     def test_media_is_refreshed_and_streamed_from_same_origin(self):
@@ -116,6 +120,96 @@ class MediaDeliveryTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 403)
         self.assertEqual(response.get_json()["error"], "not_media_mode")
+
+    def test_compat_video_serves_cached_h264_version(self):
+        compatible_path = os.path.join(self.tmp.name, "compatible.mp4")
+        with open(compatible_path, "wb") as media:
+            media.write(b"compatible-video")
+        fresh_url = (
+            "https://cdn.discordapp.com/attachments/20/11/fresh.mp4"
+            "?ex=2&is=1&hm=abc"
+        )
+
+        with (
+            mock.patch.object(
+                server, "fetch_current_media_url", return_value=fresh_url
+            ),
+            mock.patch.object(
+                server, "_compatible_video_path", return_value=compatible_path
+            ) as transcode,
+            self.app.test_client() as client,
+        ):
+            response = client.get(f"/daily/media?t={self.token}&compat=1")
+
+        response_body = response.data
+        response.close()
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response_body, b"compatible-video")
+        self.assertEqual(response.content_type, "video/mp4")
+        transcode.assert_called_once_with(1, today_str(), 10, fresh_url)
+
+    def test_compatible_video_is_transcoded_to_browser_safe_codecs(self):
+        fresh_url = (
+            "https://cdn.discordapp.com/attachments/20/11/fresh.mov"
+            "?ex=2&is=1&hm=abc"
+        )
+
+        def fake_download(_url, destination):
+            with open(destination, "wb") as source:
+                source.write(b"source-video")
+
+        def fake_ffmpeg(command, **_kwargs):
+            with open(command[-1], "wb") as output:
+                output.write(b"h264-video")
+            return SimpleNamespace(returncode=0, stderr="")
+
+        with (
+            mock.patch.object(server.shutil, "which", return_value="/usr/bin/ffmpeg"),
+            mock.patch.object(
+                server,
+                "_download_media_for_transcode",
+                side_effect=fake_download,
+            ),
+            mock.patch.object(
+                server.subprocess,
+                "run",
+                side_effect=fake_ffmpeg,
+            ) as ffmpeg,
+        ):
+            path = server._compatible_video_path(
+                1, today_str(), 10, fresh_url
+            )
+
+        self.assertEqual(path, server._media_cache_path(1, today_str(), 10))
+        with open(path, "rb") as transcoded:
+            self.assertEqual(transcoded.read(), b"h264-video")
+        command = ffmpeg.call_args.args[0]
+        self.assertIn("libx264", command)
+        self.assertIn("yuv420p", command)
+        self.assertIn("aac", command)
+        self.assertIn("+faststart", command)
+
+    def test_compat_video_returns_clear_error_without_transcoder(self):
+        fresh_url = (
+            "https://cdn.discordapp.com/attachments/20/11/fresh.mp4"
+            "?ex=2&is=1&hm=abc"
+        )
+        with (
+            mock.patch.object(
+                server, "fetch_current_media_url", return_value=fresh_url
+            ),
+            mock.patch.object(
+                server, "_compatible_video_path", return_value=None
+            ),
+            self.app.test_client() as client,
+        ):
+            response = client.get(f"/daily/media?t={self.token}&compat=1")
+
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(
+            response.get_json()["error"],
+            "compatible_video_unavailable",
+        )
 
     def test_hardcore_timer_adds_and_locks_video_duration(self):
         with self.app.test_client() as client:

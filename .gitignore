@@ -10,6 +10,7 @@ aliases.local.json
 *.sqlite3
 *.db-wal
 *.db-shm
+.media_cache/
 
 # Python
 __pycache__/

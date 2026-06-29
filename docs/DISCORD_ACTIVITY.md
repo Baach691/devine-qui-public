@@ -100,6 +100,18 @@ est transmise à `/daily/start`, plafonnée à dix minutes puis verrouillée en 
 le premier départ. Le timeout serveur devient donc `durée de la vidéo + délai
 Hardcore`, avec la même marge réseau que les autres modes.
 
+Certains navigateurs savent lire l'audio d'un MP4 sans décoder sa piste vidéo
+(notamment selon le support HEVC/AV1 du PC). Le frontend détecte l'absence de frame
+rendue et recharge automatiquement `/daily/media?...&compat=1`. Le serveur utilise
+alors `ffmpeg` pour produire une version H.264 `yuv420p` + AAC avec `faststart`.
+
+- la conversion n'a lieu qu'en cas de besoin ;
+- le résultat est servi avec le support des requêtes `Range` ;
+- le cache est privé (`0700` pour le dossier, `0600` pour les fichiers) ;
+- les fichiers expirent après 48 heures par défaut ;
+- la taille d'entrée est limitée à 100 Mo par défaut ;
+- si `ffmpeg` manque, l'interface affiche une erreur lisible au lieu de boucler.
+
 ## Configuration
 
 Variables nécessaires sur le serveur :
@@ -113,6 +125,10 @@ WEBAPP_BASE_URL=https://daily.example.com
 WEBAPP_HOST=127.0.0.1
 WEBAPP_PORT=8000
 WEBAPP_THREADS=64
+FFMPEG_PATH=ffmpeg
+MEDIA_CACHE_DIR=.media_cache
+MEDIA_CACHE_RETENTION_HOURS=48
+MEDIA_MAX_TRANSCODE_MB=100
 ```
 
 Le Client ID doit appartenir à la même application que le bot et l'Activity déployés.
@@ -172,6 +188,7 @@ Après chaque déploiement :
 Tests locaux :
 
 ```bash
+ffmpeg -version
 python -m unittest discover -s tests -v
 cd activity && npm run build
 ```

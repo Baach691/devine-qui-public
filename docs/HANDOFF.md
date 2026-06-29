@@ -36,10 +36,12 @@ All tests and examples must use clearly fictional identities and identifiers.
 - [x] Three-panel responsive layout and corrected leaderboard alignment.
 - [x] Video duration added to the Hardcore media timer.
 - [x] Rich Presence artwork keys `1` and `2`.
+- [x] Automatic H.264/AAC fallback for browsers unable to decode the original
+  video track, with a private short-lived cache.
 - [x] `TERMS.md` and `PRIVACY.md` added.
 - [x] VPS-specific deployment files removed.
 - [x] Final working-tree secret and identity scan.
-- [x] 21 Python tests, syntax checks and Activity build verification.
+- [x] 24 Python tests, syntax checks and Activity build verification.
 - [x] Publish the sanitized root commit.
 
 ## External setup still required

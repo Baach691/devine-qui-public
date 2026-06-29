@@ -1009,6 +1009,12 @@ body {
   object-fit: contain;
 }
 .media-card { text-align: center; }
+.media-compat-error {
+  margin-top: 0.75rem;
+  color: var(--wrong);
+  font-size: 0.85rem;
+  font-weight: 700;
+}
 
 /* --- Onglets : s'adaptent à 3 modes (et plus) ---------------------- */
 .mode-tabs {

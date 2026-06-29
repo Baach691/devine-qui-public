@@ -40,6 +40,80 @@
     }
   }
 
+  // Certains MP4 Discord utilisent une piste HEVC/AV1 : le son fonctionne mais
+  // certains PC n'affichent aucune image. Si aucune frame n'est décodée après le
+  // démarrage, on demande automatiquement la version H.264/AAC du serveur.
+  const mediaVideo = document.getElementById("daily-media");
+  if (mediaVideo instanceof HTMLVideoElement) {
+    setupVideoCompatibilityFallback(mediaVideo);
+  }
+
+  function setupVideoCompatibilityFallback(video) {
+    let compatibilityRetried = (video.currentSrc || video.src).includes("compat=1");
+    let frameReceived = false;
+    let frameCheckTimer = null;
+    const supportsFrameCallback = "requestVideoFrameCallback" in video;
+    let compatibilityErrorShown = false;
+
+    const markFrameReceived = () => {
+      frameReceived = true;
+      if (frameCheckTimer) {
+        clearTimeout(frameCheckTimer);
+        frameCheckTimer = null;
+      }
+    };
+
+    const retryCompatibleVersion = () => {
+      if (compatibilityRetried) {
+        if (!compatibilityErrorShown) {
+          compatibilityErrorShown = true;
+          video.insertAdjacentHTML(
+            "afterend",
+            '<p class="media-compat-error">Cette vidéo ne peut pas être affichée sur cet appareil.</p>',
+          );
+        }
+        return;
+      }
+      compatibilityRetried = true;
+      if (frameCheckTimer) clearTimeout(frameCheckTimer);
+
+      const resumeAt = Number.isFinite(video.currentTime) ? video.currentTime : 0;
+      const compatibleUrl = new URL(video.currentSrc || video.src, window.location.href);
+      compatibleUrl.searchParams.set("compat", "1");
+      video.src = compatibleUrl.toString();
+      video.load();
+      video.addEventListener("loadedmetadata", () => {
+        if (resumeAt > 0 && Number.isFinite(video.duration)) {
+          video.currentTime = Math.min(resumeAt, video.duration);
+        }
+        video.play().catch(() => {
+          /* Un clic direct peut rester nécessaire selon le client Discord. */
+        });
+      }, { once: true });
+    };
+
+    video.addEventListener("error", retryCompatibleVersion);
+    video.addEventListener("playing", () => {
+      if (compatibilityRetried || frameReceived) return;
+      if (supportsFrameCallback) {
+        video.requestVideoFrameCallback(markFrameReceived);
+      }
+      frameCheckTimer = setTimeout(() => {
+        if (
+          !frameReceived
+          && !video.paused
+          && video.currentTime > 0.5
+          && (supportsFrameCallback || video.videoWidth === 0)
+        ) {
+          retryCompatibleVersion();
+        }
+      }, 1800);
+    });
+    video.addEventListener("loadeddata", () => {
+      if (!supportsFrameCallback && video.videoWidth > 0) markFrameReceived();
+    });
+  }
+
   // --- Timer ---------------------------------------------------------------
   let startMs = null;
   let elapsedMs = 0;
