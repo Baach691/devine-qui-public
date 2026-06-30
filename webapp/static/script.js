@@ -198,7 +198,7 @@
     pollInFlight = true;
     try {
       const res = await fetch(
-        `/.proxy/daily/state?t=${encodeURIComponent(token)}`,
+        `/daily/state?t=${encodeURIComponent(token)}`,
         { cache: "no-store" },
       );
       if (res.status === 401 || res.status === 403 || res.status === 410) {
@@ -230,7 +230,7 @@
     }
 
     eventSource = new EventSource(
-      `/.proxy/daily/stream?t=${encodeURIComponent(token)}`,
+      `/daily/stream?t=${encodeURIComponent(token)}`,
     );
     // Le serveur envoie un état initial immédiatement. S'il n'arrive pas, le
     // proxy Discord bufferise probablement le SSE : on passe alors au polling.
@@ -282,7 +282,7 @@
   async function heartbeatPresence() {
     if (realtimeStopped || document.hidden || !token) return;
     try {
-      await fetch("/.proxy/daily/presence", {
+      await fetch("/daily/presence", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ token }),
@@ -953,6 +953,16 @@
     };
     liveList.innerHTML = players
       .map((player) => {
+        const shareButton = player.can_share
+          ? `<button
+               type="button"
+               class="live-share-button"
+               title="Publier mon résultat dans le salon du daily"
+               aria-label="Publier mon résultat dans le salon du daily"
+               ${player.shared ? "disabled" : ""}>
+               ${player.shared ? "✓" : "↗"}
+             </button>`
+          : "";
         const statuses = modes
           .map((mode) => {
             const key = statusView[player.statuses?.[mode]]
@@ -985,8 +995,11 @@
           <li class="live-player${player.active ? " active" : ""}${player.playing ? " playing" : ""}${player.is_me ? " me" : ""}">
             <div class="live-identity">
               <img class="live-avatar" src="${escapeAttr(player.avatar_url || "")}" alt="" loading="lazy">
-              <div>
-                <div class="live-name">${escapeHtml(player.name)}${player.is_me ? " · Toi" : ""}</div>
+              <div class="live-copy">
+                <div class="live-name-row">
+                  <div class="live-name">${escapeHtml(player.name)}${player.is_me ? " · Toi" : ""}</div>
+                  ${shareButton}
+                </div>
                 <div class="live-activity">${escapeHtml(player.activity || "")}</div>
               </div>
             </div>
@@ -1001,6 +1014,45 @@
       status.addEventListener("focus", () => showLiveDetailTooltip(status));
       status.addEventListener("blur", hideLiveDetailTooltip);
     });
+    liveList.querySelectorAll(".live-share-button:not([disabled])").forEach((button) => {
+      button.addEventListener("click", () => shareDailyResult(button));
+    });
+  }
+
+  async function shareDailyResult(button) {
+    if (!button || button.dataset.loading === "1") return;
+    button.dataset.loading = "1";
+    button.disabled = true;
+    const previousLabel = button.textContent;
+    button.textContent = "…";
+    try {
+      const response = await fetch("/daily/share", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token }),
+        cache: "no-store",
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (response.ok || payload.error === "already_shared") {
+        button.textContent = "✓";
+        button.title = "Résultat déjà partagé";
+        button.setAttribute("aria-label", "Résultat déjà partagé");
+        return;
+      }
+      const messages = {
+        daily_not_complete: "Termine les quatre modes avant de partager.",
+        share_channel_unavailable: "Le salon du daily est introuvable.",
+        share_in_progress: "Ton résultat est déjà en cours de publication.",
+        share_failed: "Discord n’a pas pu publier le résultat.",
+      };
+      throw new Error(messages[payload.error] || "Partage impossible.");
+    } catch (error) {
+      button.disabled = false;
+      button.textContent = previousLabel;
+      alert(error.message || "Partage impossible.");
+    } finally {
+      delete button.dataset.loading;
+    }
   }
 
   function showLiveDetailTooltip(target) {

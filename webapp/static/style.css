@@ -720,6 +720,41 @@ body {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.live-copy {
+  min-width: 0;
+}
+.live-name-row {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+.live-name-row .live-name {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.live-share-button {
+  flex: 0 0 auto;
+  width: 28px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid var(--accent);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--accent);
+  cursor: pointer;
+  font-size: 0.62rem;
+  font-weight: 800;
+}
+.live-share-button:hover:not(:disabled) {
+  background: var(--accent);
+  color: white;
+}
+.live-share-button:disabled {
+  border-color: var(--border);
+  color: var(--muted);
+  cursor: default;
+}
 .live-activity {
   overflow: hidden;
   margin-top: 0.1rem;

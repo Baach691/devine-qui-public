@@ -51,7 +51,11 @@ Tous les exemples publics doivent utiliser des valeurs manifestement fictives.
   streak dédiée et classement publié avec indicateur des joueurs du jour.
 - [x] Emojis de streak enrichis par paliers de cinq, anciens symboles conservés.
 - [x] Bouton persistant dans l'annonce quotidienne pour lancer l'Activity.
-- [x] Tests privés : 41 tests Python, build Vite et vérifications de syntaxe.
+- [x] Lancement mobile fiabilisé : la coque Vite reste une SPA et charge `/daily`
+  dans une iframe interne, sans navigation principale bloquée par Android.
+- [x] Partage Wordle-like du bilan emoji après les quatre modes, une fois par joueur
+  et par jour dans le salon du ping quotidien.
+- [x] Tests privés : 48 tests Python, build Vite et vérifications de syntaxe.
 - [x] Dépôt public renommé en `Baach691/daily-guessr`.
 - [x] Historique public remplacé par le commit racine assaini `fb66705`.
 - [x] Feature live et correctifs suivants recopiés et assainis dans le dépôt public.

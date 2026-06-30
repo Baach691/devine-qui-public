@@ -14,6 +14,11 @@ Commande /daily
 Discord Activity (iframe via discordsays.com)
       |
       v
+Coque Vite monopage
+  |- OAuth et Embedded App SDK
+  |- iframe interne /daily
+      |
+      v
 Backend Flask HTTPS
   |- build Vite de activity/
   |- échange OAuth2 /api/token
@@ -32,22 +37,26 @@ pas une seconde implémentation du moteur.
 
 1. Le frontend Vite initialise `DiscordSDK`.
 2. Il demande un code OAuth2 avec `authorize`.
-3. `POST /.proxy/api/token` échange ce code côté serveur.
+3. `POST /api/token` échange ce code côté serveur.
 4. Le frontend appelle `authenticate` avec l'access token.
-5. `POST /.proxy/api/activity/session` vérifie :
+5. `POST /api/activity/session` vérifie :
    - l'application OAuth ;
    - l'identité Discord ;
    - l'appartenance au serveur ;
    - la whitelist de rôles éventuelle.
 6. Le backend renvoie une URL `/daily?t=<token>` signée pour ce joueur, ce serveur et
    la date courante.
+7. La coque Vite reste au premier niveau et charge le Daily dans une iframe interne
+   de même origine. Elle ne déclenche aucune navigation web principale, ce qui évite
+   la fermeture de l'Activity sur Android.
 
 `DISCORD_CLIENT_SECRET` reste exclusivement côté serveur. Le build Vite ne reçoit que
 `VITE_DISCORD_CLIENT_ID`, qui est public.
 
 ## Routes
 
-Toutes les routes nécessaires dans l'iframe possèdent un alias `/.proxy/`.
+Le client utilise les chemins directs recommandés par le proxy Discord. Les alias
+historiques `/.proxy/` restent disponibles pour les anciens clients.
 
 | Route | Rôle |
 |---|---|
@@ -62,6 +71,7 @@ Toutes les routes nécessaires dans l'iframe possèdent un alias `/.proxy/`.
 | `GET /daily/stream` | progression et classement via SSE ; |
 | `GET /daily/state` | fallback polling ; |
 | `POST /daily/presence` | heartbeat de présence. |
+| `POST /daily/share` | publication unique du bilan emoji dans le salon du ping. |
 
 ## Interface
 
@@ -82,6 +92,11 @@ toujours 5/5. Après validation, l'interface conserve l'ordre proposé avec un m
 par position et affiche séparément le bon ordre. Les messages peuvent être déplacés
 par glisser-déposer ou avec les boutons haut/bas. Les pièces jointes sont servies par
 `/daily/sequence/media` après validation que leur ID appartient bien au défi signé.
+
+Quand les quatre modes sont terminés, la ligne du joueur courant dans **En direct**
+affiche un bouton de partage. Le backend vérifie les quatre tentatives, construit un
+résumé emoji sans réponse, puis le bot le publie une seule fois dans le salon
+réellement utilisé par l'annonce quotidienne.
 
 ### Rich Presence
 
@@ -111,8 +126,9 @@ départ.
 
 La page propose **Ouvrir le média**, qui lance un lecteur externe ne contenant que
 l'image ou la vidéo proxifiée. Il n'affiche ni le message Discord, ni le salon, ni
-l'auteur. Dans l'Activity, ce lien passe par
-`sdk.commands.openExternalLink()` grâce au bundle `activity-bridge.js` ; hors
+l'auteur. Dans l'Activity, le bundle `activity-bridge.js` transmet ce lien à la
+coque Vite, qui appelle `sdk.commands.openExternalLink()` depuis l'iframe SDK
+principale ; hors
 Activity, il reste un lien web classique. Le navigateur système peut ainsi prendre
 le relais lorsqu'un client Discord lit le son mais ne sait pas décoder la piste
 vidéo, sans téléchargement forcé. Le pont tente d'abord une ouverture synchrone pour

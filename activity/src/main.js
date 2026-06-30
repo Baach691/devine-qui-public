@@ -7,6 +7,46 @@ const status = (txt) => render(`<p class="status">${escapeHtml(txt)}</p>`);
 
 // Injecté au build par Vite depuis le .env racine (VITE_DISCORD_CLIENT_ID).
 const CLIENT_ID = import.meta.env.VITE_DISCORD_CLIENT_ID;
+const OPEN_EXTERNAL_MESSAGE = 'daily-guessr:open-external';
+
+function mountDaily(url, sdk) {
+  const dailyUrl = new URL(url, window.location.href);
+  if (
+    dailyUrl.origin !== window.location.origin
+    || dailyUrl.pathname !== '/daily'
+  ) {
+    throw new Error('URL du Daily refusée');
+  }
+
+  const frame = document.createElement('iframe');
+  frame.className = 'daily-frame';
+  frame.src = `${dailyUrl.pathname}${dailyUrl.search}`;
+  frame.title = 'Daily Guessr';
+  frame.allow = 'autoplay; fullscreen';
+  frame.allowFullscreen = true;
+
+  window.addEventListener('message', async (event) => {
+    if (
+      event.origin !== window.location.origin
+      || event.source !== frame.contentWindow
+      || event.data?.type !== OPEN_EXTERNAL_MESSAGE
+    ) {
+      return;
+    }
+    try {
+      const externalUrl = new URL(event.data.url);
+      if (externalUrl.protocol !== 'https:') {
+        throw new Error('Seuls les liens HTTPS sont autorisés');
+      }
+      await sdk.commands.openExternalLink({ url: externalUrl.href });
+    } catch (error) {
+      console.warn('Ouverture externe impossible', error);
+    }
+  });
+
+  document.documentElement.classList.add('game-loaded');
+  app.replaceChildren(frame);
+}
 
 async function main() {
   if (!CLIENT_ID) {
@@ -33,7 +73,7 @@ async function main() {
 
   // 3) Échange le code contre un access_token (côté serveur, secret protégé).
   status('Connexion…');
-  const res = await fetch('/.proxy/api/token', {
+  const res = await fetch('/api/token', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ code }),
@@ -80,7 +120,7 @@ async function main() {
   // 5) Le backend valide le token + l'appartenance au serveur, puis crée le
   // lien Daily signé utilisé par l'interface web existante.
   status('Chargement du Daily…');
-  const sessionRes = await fetch('/.proxy/api/activity/session', {
+  const sessionRes = await fetch('/api/activity/session', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -95,7 +135,7 @@ async function main() {
     );
   }
   if (!sessionPayload.url) throw new Error('URL du Daily manquante');
-  window.location.assign(sessionPayload.url);
+  mountDaily(sessionPayload.url, sdk);
 }
 
 function escapeHtml(s) {

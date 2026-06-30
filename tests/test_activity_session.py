@@ -2,6 +2,7 @@ import os
 import json
 import tempfile
 import unittest
+from pathlib import Path
 from unittest import mock
 from urllib.parse import parse_qs, urlparse
 
@@ -68,7 +69,7 @@ class ActivitySessionTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         url = response.get_json()["url"]
-        self.assertTrue(url.startswith("/.proxy/daily?t="))
+        self.assertTrue(url.startswith("/daily?t="))
         token = parse_qs(urlparse(url).query)["t"][0]
         payload = tokens.verify_token(token, config.WEBAPP_SECRET)
         self.assertEqual(payload["g"], 99)
@@ -89,7 +90,7 @@ class ActivitySessionTests(unittest.TestCase):
         self.assertEqual(response.status_code, 403)
         self.assertEqual(response.get_json()["error"], "not_a_guild_member")
 
-    def test_activity_links_stay_inside_discord_proxy(self):
+    def test_activity_links_stay_on_the_mapped_origin(self):
         url = _build_daily_link(
             99,
             42,
@@ -100,7 +101,7 @@ class ActivitySessionTests(unittest.TestCase):
             activity=True,
         )
 
-        self.assertTrue(url.startswith("/.proxy/daily?t="))
+        self.assertTrue(url.startswith("/daily?t="))
         token = parse_qs(urlparse(url).query)["t"][0]
         payload = tokens.verify_token(token, config.WEBAPP_SECRET)
         self.assertEqual(payload["m"], database.MODE_MEDIA)
@@ -174,7 +175,26 @@ class ActivitySessionTests(unittest.TestCase):
         self.assertIn("Devine la phrase", html)
         self.assertIn("Devine le média", html)
         self.assertIn("Remets dans l&#39;ordre", html)
-        self.assertEqual(html.count('href="/.proxy/daily?t='), 4)
+        self.assertEqual(html.count('href="/daily?t='), 4)
+        self.assertNotIn('href="discord://"', html)
+
+    def test_activity_shell_embeds_daily_without_top_level_navigation(self):
+        project_root = Path(__file__).resolve().parents[1]
+        main_source = (project_root / "activity/src/main.js").read_text()
+        bridge_source = (project_root / "activity/src/bridge.js").read_text()
+
+        self.assertNotIn("window.location.assign", main_source)
+        self.assertIn("document.createElement('iframe')", main_source)
+        self.assertIn("mountDaily(sessionPayload.url, sdk)", main_source)
+        self.assertIn("window.parent.postMessage", bridge_source)
+
+    def test_activity_pages_allow_same_origin_nested_frame(self):
+        with self.app.test_client() as client:
+            response = client.get("/")
+
+        csp = response.headers.get("Content-Security-Policy", "")
+        response.close()
+        self.assertIn("frame-ancestors 'self'", csp)
 
 
 if __name__ == "__main__":

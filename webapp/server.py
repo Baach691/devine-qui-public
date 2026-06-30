@@ -272,6 +272,88 @@ def fetch_current_media_url(
         return None
 
 
+def _daily_result_channel_id(guild_id: int, date_str: str) -> Optional[int]:
+    """Retrouve le salon du ping quotidien, avec repli pour les anciennes annonces."""
+    candidates = []
+    announced_channel = database.get_daily_announce_channel(guild_id, date_str)
+    if announced_channel:
+        candidates.append(announced_channel)
+    explicit = getattr(config, "ANNOUNCE_CHANNEL_ID", 0) or 0
+    if explicit:
+        candidates.append(explicit)
+    candidates.extend(getattr(config, "ALLOWED_CHANNEL_IDS", []) or [])
+    daily = database.get_daily(guild_id, date_str)
+    if daily is not None:
+        candidates.append(daily["channel_id"])
+    return int(candidates[0]) if candidates else None
+
+
+def _format_daily_result_share(
+    date_str: str,
+    user_name: str,
+    attempts: Dict[str, dict],
+) -> str:
+    """Résumé sans spoil, inspiré des partages Wordle."""
+    sequence_score = max(
+        0,
+        min(5, int(attempts[database.MODE_SEQUENCE].get("guessed_id") or 0)),
+    )
+    sequence_icons = {
+        0: "❌",
+        1: "1️⃣",
+        2: "2️⃣",
+        3: "3️⃣",
+        4: "4️⃣",
+        5: "✅",
+    }
+    safe_name = "".join(
+        f"\\{character}" if character in "\\*_~`>|" else character
+        for character in user_name
+    )
+    lines = [
+        f"🎮 **Daily Guessr — {format_date_fr(date_str)}**",
+        f"**{safe_name}**",
+        " ".join((
+            f"🌞 {'✅' if attempts[database.MODE_AUTHOR]['correct'] else '❌'}",
+            f"✍️ {'✅' if attempts[database.MODE_PHRASE]['correct'] else '❌'}",
+            f"🖼️ {'✅' if attempts[database.MODE_MEDIA]['correct'] else '❌'}",
+            f"🔀 {sequence_icons[sequence_score]}/5",
+        )),
+    ]
+    wins = sum(1 for attempt in attempts.values() if attempt["correct"])
+    lines.append(
+        f"{'🏆' if wins == len(DAILY_MODE_SPECS) else '🏁'} "
+        f"**{wins}/{len(DAILY_MODE_SPECS)} modes réussis**"
+    )
+    return "\n".join(lines)
+
+
+async def _send_daily_result_async(bot, channel_id: int, content: str) -> int:
+    channel = bot.get_channel(channel_id)
+    if channel is None:
+        channel = await bot.fetch_channel(channel_id)
+    message = await channel.send(
+        content,
+        allowed_mentions=discord.AllowedMentions.none(),
+    )
+    return int(message.id)
+
+
+def send_daily_result(bot, channel_id: int, content: str) -> Optional[int]:
+    """Envoie le partage depuis le thread Flask via l'event loop Discord."""
+    if bot is None or not bot.is_ready():
+        return None
+    try:
+        future = asyncio.run_coroutine_threadsafe(
+            _send_daily_result_async(bot, channel_id, content),
+            bot.loop,
+        )
+        return future.result(timeout=8.0)
+    except Exception:
+        log.exception("Échec du partage du résultat dans le salon %s", channel_id)
+        return None
+
+
 def _is_discord_attachment_url(url: str) -> bool:
     """Empêche la route média de devenir un proxy HTTP arbitraire."""
     try:
@@ -623,6 +705,11 @@ def _daily_progress_view(
                 for option in challenge["options"]
             }
     mode_labels = {mode: label for mode, _icon, label in DAILY_MODE_SPECS}
+    viewer_shared = database.has_daily_result_share(
+        guild_id,
+        date_str,
+        viewer_user_id,
+    )
     out = []
 
     for user_id, participant in participants.items():
@@ -690,6 +777,8 @@ def _daily_progress_view(
             activity = "Daily ouvert"
 
         user = database.get_user(guild_id, user_id) or {}
+        is_me = user_id == viewer_user_id
+        daily_complete = completed_count == len(DAILY_MODE_SPECS)
         out.append({
             "user_id": str(user_id),
             "name": user.get("name") or participant["name"],
@@ -699,7 +788,9 @@ def _daily_progress_view(
             "activity": activity,
             "statuses": statuses,
             "details": details,
-            "is_me": user_id == viewer_user_id,
+            "is_me": is_me,
+            "can_share": is_me and daily_complete,
+            "shared": is_me and viewer_shared,
             "_completed_count": completed_count,
         })
 
@@ -839,7 +930,7 @@ _ACTIVITY_DIST = os.path.join(
 
 # En-tête pour autoriser l'embarquement dans l'iframe Discord.
 _FRAME_ANCESTORS = (
-    "frame-ancestors https://discord.com https://*.discord.com "
+    "frame-ancestors 'self' https://discord.com https://*.discord.com "
     "https://*.discordsays.com;"
 )
 
@@ -1058,7 +1149,7 @@ def create_app(bot=None) -> Flask:
             "x": "activity",
         }
         token = tokens.make_token(payload, config.WEBAPP_SECRET)
-        return jsonify({"url": f"/.proxy/daily?t={token}"})
+        return jsonify({"url": f"/daily?t={token}"})
 
     # --- Activity : sert l'app embarquée (build Vite) à la racine -----------
     @app.route("/")
@@ -1628,6 +1719,71 @@ def create_app(bot=None) -> Flask:
         if error is not None:
             return error
         return jsonify({"ok": True})
+
+    @app.route("/daily/share", methods=["POST"])
+    @app.route("/.proxy/daily/share", methods=["POST"])
+    def daily_share():
+        """Publie une fois le bilan emoji du joueur dans le salon du ping."""
+        data = request.get_json(silent=True) or {}
+        payload = tokens.verify_token(data.get("token", ""), config.WEBAPP_SECRET)
+        if payload is None:
+            return jsonify({"error": "invalid_token"}), 403
+        date_str = today_str()
+        if payload.get("d") != date_str:
+            return jsonify({"error": "expired_token"}), 410
+
+        guild_id = int(payload["g"])
+        user_id = int(payload["u"])
+        attempts = {
+            mode: database.get_daily_attempt(
+                guild_id,
+                date_str,
+                user_id,
+                mode=mode,
+            )
+            for mode in database.VALID_MODES
+        }
+        if any(attempt is None for attempt in attempts.values()):
+            return jsonify({"error": "daily_not_complete"}), 409
+        if database.has_daily_result_share(guild_id, date_str, user_id):
+            return jsonify({"error": "already_shared", "shared": True}), 409
+
+        channel_id = _daily_result_channel_id(guild_id, date_str)
+        if channel_id is None:
+            return jsonify({"error": "share_channel_unavailable"}), 503
+        if not database.reserve_daily_result_share(
+            guild_id,
+            date_str,
+            user_id,
+            channel_id,
+        ):
+            if database.has_daily_result_share(guild_id, date_str, user_id):
+                return jsonify({"error": "already_shared", "shared": True}), 409
+            return jsonify({"error": "share_in_progress"}), 409
+
+        user_name = (
+            attempts[database.MODE_AUTHOR].get("user_name")
+            or payload.get("n")
+            or "Joueur"
+        )
+        content = _format_daily_result_share(date_str, user_name, attempts)
+        message_id = send_daily_result(
+            current_app.config.get("BOT"),
+            channel_id,
+            content,
+        )
+        if message_id is None:
+            database.cancel_daily_result_share(guild_id, date_str, user_id)
+            return jsonify({"error": "share_failed"}), 502
+
+        database.complete_daily_result_share(
+            guild_id,
+            date_str,
+            user_id,
+            message_id,
+        )
+        _publish_realtime((guild_id, date_str))
+        return jsonify({"ok": True, "shared": True})
 
     @app.route("/daily/stream")
     @app.route("/.proxy/daily/stream")

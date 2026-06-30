@@ -1,13 +1,24 @@
 import { DiscordSDK } from '@discord/embedded-app-sdk';
 
 const CLIENT_ID = import.meta.env.VITE_DISCORD_CLIENT_ID;
-const sdk = CLIENT_ID ? new DiscordSDK(CLIENT_ID) : null;
+const OPEN_EXTERNAL_MESSAGE = 'daily-guessr:open-external';
+const isNested = window.parent !== window;
+const sdk = !isNested && CLIENT_ID ? new DiscordSDK(CLIENT_ID) : null;
 const sdkReady = sdk
   ? sdk.ready()
   : Promise.reject(new Error('VITE_DISCORD_CLIENT_ID absent'));
+if (!sdk) sdkReady.catch(() => {});
 
 async function openOutsideActivity(link) {
   const url = new URL(link.href, window.location.href).href;
+
+  if (isNested) {
+    window.parent.postMessage(
+      { type: OPEN_EXTERNAL_MESSAGE, url },
+      window.location.origin,
+    );
+    return;
+  }
 
   // Une fenêtre créée pendant le clic conserve l'autorisation navigateur.
   // Après un `await`, Discord/Chromium peut considérer l'ouverture comme une

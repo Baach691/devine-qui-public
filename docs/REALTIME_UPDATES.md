@@ -52,8 +52,8 @@ réseau ou le code source.
 
 ## Présence
 
-`POST /daily/presence` et son alias `/.proxy/daily/presence` reçoivent un heartbeat
-signé toutes les 15 secondes.
+`POST /daily/presence` reçoit un heartbeat signé toutes les 15 secondes. Son alias
+historique `/.proxy/daily/presence` reste accepté.
 
 - Une présence expire après 45 secondes sans heartbeat.
 - Une ouverture de page marque le mode consulté.
@@ -71,7 +71,6 @@ Le transport principal reste Server-Sent Events :
 
 ```text
 GET /daily/stream?t=<token>
-GET /.proxy/daily/stream?t=<token>
 ```
 
 La clé du broker est désormais `(guild_id, date)`. Un démarrage ou une réponse dans
@@ -124,7 +123,6 @@ sur :
 
 ```text
 GET /daily/state?t=<token>
-GET /.proxy/daily/state?t=<token>
 ```
 
 Le polling a lieu toutes les trois secondes, s'arrête lorsque la page est masquée et
@@ -155,6 +153,19 @@ monde.
 La page reçoit aussi un premier état personnalisé dans `window.DAILY` au rendu.
 La colonne En direct est donc remplie immédiatement ; le SSE prend ensuite le relais
 sans modifier les règles anti-spoil.
+
+## Partage du résultat
+
+Une fois les quatre modes terminés, seule la ligne du viewer reçoit
+`can_share: true`. Le bouton appelle `POST /daily/share` avec le token signé.
+
+- Le message ne contient que les résultats emoji, jamais les réponses choisies.
+- Le salon est celui mémorisé lors du ping quotidien ; les anciennes annonces
+  utilisent le même ordre de repli que le scheduler.
+- La contrainte SQLite `(guild_id, date, user_id)` rend le partage idempotent.
+- Une réservation est annulée si Discord refuse l'envoi, afin de permettre un nouvel
+  essai.
+- Après succès, le flux live remplace le bouton par l'état `Partagé`.
 
 ## Tests
 

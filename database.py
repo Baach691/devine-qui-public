@@ -132,8 +132,19 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE TABLE IF NOT EXISTS daily_announced (
     guild_id     INTEGER NOT NULL,
     date         TEXT    NOT NULL,
+    channel_id   INTEGER,
     announced_at TEXT    NOT NULL,
     PRIMARY KEY (guild_id, date)
+);
+
+CREATE TABLE IF NOT EXISTS daily_result_shares (
+    guild_id   INTEGER NOT NULL,
+    date       TEXT    NOT NULL,
+    user_id    INTEGER NOT NULL,
+    channel_id INTEGER NOT NULL,
+    message_id INTEGER,
+    shared_at  TEXT    NOT NULL,
+    PRIMARY KEY (guild_id, date, user_id)
 );
 
 -- =====================================================================
@@ -404,6 +415,8 @@ def init_db() -> None:
         "ALTER TABLE daily_start ADD COLUMN difficulty TEXT NOT NULL DEFAULT 'normal'",
         # Une vidéo en Hardcore ajoute sa durée au délai de réponse.
         "ALTER TABLE daily_start ADD COLUMN time_bonus_seconds REAL NOT NULL DEFAULT 0",
+        # Mémorise le salon réellement utilisé par le ping quotidien.
+        "ALTER TABLE daily_announced ADD COLUMN channel_id INTEGER",
     ]
     for stmt in _MIGRATIONS:
         try:
@@ -1604,17 +1617,98 @@ def is_daily_announced(guild_id: int, date_str: str, mode: str = MODE_AUTHOR) ->
     return row is not None
 
 
-def mark_daily_announced(guild_id: int, date_str: str, mode: str = MODE_AUTHOR) -> bool:
+def mark_daily_announced(
+    guild_id: int,
+    date_str: str,
+    mode: str = MODE_AUTHOR,
+    channel_id: Optional[int] = None,
+) -> bool:
     """Marque le daily comme annoncé. Renvoie False si déjà marqué (course)."""
     tbl = _tbl(mode, "daily_announced")
     conn = get_conn()
-    cur = conn.execute(
-        f"INSERT OR IGNORE INTO {tbl} (guild_id, date, announced_at) "
-        "VALUES (?, ?, datetime('now'))",
+    if mode == MODE_AUTHOR:
+        cur = conn.execute(
+            "INSERT OR IGNORE INTO daily_announced "
+            "(guild_id, date, channel_id, announced_at) "
+            "VALUES (?, ?, ?, datetime('now'))",
+            (guild_id, date_str, channel_id),
+        )
+    else:
+        cur = conn.execute(
+            f"INSERT OR IGNORE INTO {tbl} (guild_id, date, announced_at) "
+            "VALUES (?, ?, datetime('now'))",
+            (guild_id, date_str),
+        )
+    conn.commit()
+    return cur.rowcount > 0
+
+
+def get_daily_announce_channel(guild_id: int, date_str: str) -> Optional[int]:
+    """Salon réellement utilisé pour le ping, si l'annonce l'a mémorisé."""
+    row = get_conn().execute(
+        "SELECT channel_id FROM daily_announced WHERE guild_id = ? AND date = ?",
         (guild_id, date_str),
+    ).fetchone()
+    return int(row["channel_id"]) if row and row["channel_id"] is not None else None
+
+
+def has_daily_result_share(guild_id: int, date_str: str, user_id: int) -> bool:
+    row = get_conn().execute(
+        "SELECT 1 FROM daily_result_shares "
+        "WHERE guild_id = ? AND date = ? AND user_id = ? AND message_id IS NOT NULL",
+        (guild_id, date_str, user_id),
+    ).fetchone()
+    return row is not None
+
+
+def reserve_daily_result_share(
+    guild_id: int,
+    date_str: str,
+    user_id: int,
+    channel_id: int,
+) -> bool:
+    """Réserve un partage pour rendre deux clics concurrents idempotents."""
+    conn = get_conn()
+    # Une réservation inachevée peut être reprise après deux minutes.
+    conn.execute(
+        "DELETE FROM daily_result_shares "
+        "WHERE guild_id = ? AND date = ? AND user_id = ? "
+        "AND message_id IS NULL AND shared_at < datetime('now', '-2 minutes')",
+        (guild_id, date_str, user_id),
+    )
+    cur = conn.execute(
+        "INSERT OR IGNORE INTO daily_result_shares "
+        "(guild_id, date, user_id, channel_id, message_id, shared_at) "
+        "VALUES (?, ?, ?, ?, NULL, datetime('now'))",
+        (guild_id, date_str, user_id, channel_id),
     )
     conn.commit()
     return cur.rowcount > 0
+
+
+def complete_daily_result_share(
+    guild_id: int,
+    date_str: str,
+    user_id: int,
+    message_id: int,
+) -> None:
+    conn = get_conn()
+    conn.execute(
+        "UPDATE daily_result_shares SET message_id = ?, shared_at = datetime('now') "
+        "WHERE guild_id = ? AND date = ? AND user_id = ?",
+        (message_id, guild_id, date_str, user_id),
+    )
+    conn.commit()
+
+
+def cancel_daily_result_share(guild_id: int, date_str: str, user_id: int) -> None:
+    conn = get_conn()
+    conn.execute(
+        "DELETE FROM daily_result_shares "
+        "WHERE guild_id = ? AND date = ? AND user_id = ? AND message_id IS NULL",
+        (guild_id, date_str, user_id),
+    )
+    conn.commit()
 
 
 def get_daily_attempt(

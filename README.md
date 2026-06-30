@@ -29,12 +29,15 @@ classements et une interface jouable directement dans une Discord Activity.
   et suivi en direct à droite.
 - Le direct affiche `×`, `1`, `2`, `3`, `4` ou `✓` pour le mode conversation. Le
   classement indique aussi les joueurs ayant participé aujourd'hui.
+- Une fois les quatre modes terminés, chacun peut publier son bilan en emojis,
+  sans spoiler, directement dans le salon de l'annonce quotidienne.
 - État live initial rendu immédiatement, puis mise à jour par SSE avec polling
   automatique si le proxy Discord bloque le flux.
 - Bouton persistant dans l'annonce quotidienne pour lancer directement l'Activity.
 - Commande `/optout` pour retirer ses messages du pool local.
 - Activity Discord avec OAuth, contrôle d'appartenance au serveur et restriction
-  facultative par rôle.
+  facultative par rôle. La coque reste une application monopage et charge le jeu
+  dans une iframe interne pour éviter les navigations bloquées sur mobile.
 
 ## Commandes principales
 

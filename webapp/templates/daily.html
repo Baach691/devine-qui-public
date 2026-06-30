@@ -319,7 +319,9 @@
 
     <footer class="footer">
       <span>Un seul essai par mode et par jour · Tu reviens demain ?</span>
-      <a class="back" href="discord://">Retour à Discord</a>
+      {% if not is_activity %}
+        <a class="back" href="discord://">Retour à Discord</a>
+      {% endif %}
     </footer>
   </main>
 

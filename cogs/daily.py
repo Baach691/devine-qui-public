@@ -487,7 +487,7 @@ def _build_daily_link(
         payload["x"] = "activity"
     token = tokens.make_token(payload, config.WEBAPP_SECRET)
     if activity:
-        return f"/.proxy/daily?t={token}"
+        return f"/daily?t={token}"
     base = config.WEBAPP_BASE_URL.rstrip("/")
     return f"{base}/daily?t={token}"
 
@@ -939,7 +939,11 @@ class Daily(commands.Cog):
             return
 
         # Marque seulement après un envoi réussi (sinon on retentera plus tard).
-        database.mark_daily_announced(guild.id, date_str)
+        database.mark_daily_announced(
+            guild.id,
+            date_str,
+            channel_id=channel.id,
+        )
         log.info("Annonce combinée envoyée dans #%s (%s joueur(s) pingé(s)).",
                  channel.name, len(played_yesterday))
 

@@ -27,6 +27,31 @@ html, body {
   padding: 1.5rem;
 }
 
+.game-loaded,
+.game-loaded body,
+.game-loaded #app {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+
+.game-loaded body {
+  overflow: hidden;
+}
+
+.game-loaded #app {
+  display: block;
+  padding: 0;
+}
+
+.daily-frame {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: var(--bg);
+}
+
 .status {
   color: var(--muted);
   font-size: 1rem;
