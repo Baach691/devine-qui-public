@@ -104,7 +104,7 @@ class DailyResultShareTests(unittest.TestCase):
         self.assertEqual(response.get_json()["error"], "daily_not_complete")
         send.assert_not_called()
 
-    def test_share_posts_spoiler_free_emojis_once_in_announce_channel(self):
+    def test_share_posts_compact_emojis_and_can_be_repeated(self):
         self._record_all_modes()
         with (
             mock.patch.object(
@@ -118,25 +118,22 @@ class DailyResultShareTests(unittest.TestCase):
             second = client.post("/daily/share", json={"token": self.token})
 
         self.assertEqual(first.status_code, 200)
-        self.assertEqual(second.status_code, 409)
-        self.assertEqual(second.get_json()["error"], "already_shared")
-        send.assert_called_once()
-        bot, channel_id, content = send.call_args.args
+        self.assertEqual(second.status_code, 200)
+        self.assertEqual(send.call_count, 2)
+        bot, channel_id, content = send.call_args_list[0].args
         self.assertIs(bot, self.bot)
         self.assertEqual(channel_id, self.CHANNEL_ID)
-        self.assertIn("🌞 ✅", content)
-        self.assertIn("✍️ ❌", content)
-        self.assertIn("🖼️ ✅", content)
-        self.assertIn("🔀 3️⃣/5", content)
-        self.assertIn("2/4 modes réussis", content)
+        self.assertEqual(content.splitlines()[-1], "✅ ❌ ✅ 3️⃣")
+        self.assertNotIn("🎮", content)
+        self.assertNotIn("🌞", content)
+        self.assertNotIn("✍️", content)
+        self.assertNotIn("🖼️", content)
+        self.assertNotIn("🔀", content)
+        self.assertNotIn("/5", content)
+        self.assertNotIn("modes réussis", content)
         self.assertNotIn("guessed", content)
-        self.assertTrue(database.has_daily_result_share(
-            self.GUILD_ID,
-            self.date,
-            self.USER_ID,
-        ))
 
-    def test_failed_send_releases_reservation_for_retry(self):
+    def test_failed_send_can_be_retried(self):
         self._record_all_modes()
         with (
             mock.patch.object(server, "send_daily_result", return_value=None),
@@ -146,32 +143,12 @@ class DailyResultShareTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 502)
         self.assertEqual(response.get_json()["error"], "share_failed")
-        self.assertFalse(database.has_daily_result_share(
-            self.GUILD_ID,
-            self.date,
-            self.USER_ID,
-        ))
-        self.assertTrue(database.reserve_daily_result_share(
-            self.GUILD_ID,
-            self.date,
-            self.USER_ID,
-            self.CHANNEL_ID,
-        ))
-
-    def test_concurrent_share_reports_in_progress(self):
-        self._record_all_modes()
-        self.assertTrue(database.reserve_daily_result_share(
-            self.GUILD_ID,
-            self.date,
-            self.USER_ID,
-            self.CHANNEL_ID,
-        ))
-
-        with self.app.test_client() as client:
-            response = client.post("/daily/share", json={"token": self.token})
-
-        self.assertEqual(response.status_code, 409)
-        self.assertEqual(response.get_json()["error"], "share_in_progress")
+        with (
+            mock.patch.object(server, "send_daily_result", return_value=123456),
+            self.app.test_client() as client,
+        ):
+            retry = client.post("/daily/share", json={"token": self.token})
+        self.assertEqual(retry.status_code, 200)
 
     def test_live_progress_exposes_share_only_on_completed_own_row(self):
         self._record_all_modes()
@@ -182,27 +159,7 @@ class DailyResultShareTests(unittest.TestCase):
         )
         own = next(player for player in progress if player["is_me"])
         self.assertTrue(own["can_share"])
-        self.assertFalse(own["shared"])
-
-        database.reserve_daily_result_share(
-            self.GUILD_ID,
-            self.date,
-            self.USER_ID,
-            self.CHANNEL_ID,
-        )
-        database.complete_daily_result_share(
-            self.GUILD_ID,
-            self.date,
-            self.USER_ID,
-            123456,
-        )
-        refreshed = server._daily_progress_view(
-            self.GUILD_ID,
-            self.date,
-            self.USER_ID,
-        )
-        own = next(player for player in refreshed if player["is_me"])
-        self.assertTrue(own["shared"])
+        self.assertNotIn("shared", own)
 
 
 if __name__ == "__main__":

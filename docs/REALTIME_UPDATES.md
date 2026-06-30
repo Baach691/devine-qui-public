@@ -160,12 +160,12 @@ Une fois les quatre modes terminés, seule la ligne du viewer reçoit
 `can_share: true`. Le bouton appelle `POST /daily/share` avec le token signé.
 
 - Le message ne contient que les résultats emoji, jamais les réponses choisies.
+- Les quatre résultats sont affichés sans icône de mode, sans score `/5` ni total
+  final : par exemple `✅ ❌ ✅ 3️⃣`.
 - Le salon est celui mémorisé lors du ping quotidien ; les anciennes annonces
   utilisent le même ordre de repli que le scheduler.
-- La contrainte SQLite `(guild_id, date, user_id)` rend le partage idempotent.
-- Une réservation est annulée si Discord refuse l'envoi, afin de permettre un nouvel
-  essai.
-- Après succès, le flux live remplace le bouton par l'état `Partagé`.
+- Le bouton reste disponible après un envoi réussi afin de permettre plusieurs
+  partages du même résultat.
 
 ## Tests
 

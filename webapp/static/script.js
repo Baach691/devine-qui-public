@@ -958,9 +958,8 @@
                type="button"
                class="live-share-button"
                title="Publier mon résultat dans le salon du daily"
-               aria-label="Publier mon résultat dans le salon du daily"
-               ${player.shared ? "disabled" : ""}>
-               ${player.shared ? "✓" : "↗"}
+               aria-label="Publier mon résultat dans le salon du daily">
+               ↗
              </button>`
           : "";
         const statuses = modes
@@ -1014,7 +1013,7 @@
       status.addEventListener("focus", () => showLiveDetailTooltip(status));
       status.addEventListener("blur", hideLiveDetailTooltip);
     });
-    liveList.querySelectorAll(".live-share-button:not([disabled])").forEach((button) => {
+    liveList.querySelectorAll(".live-share-button").forEach((button) => {
       button.addEventListener("click", () => shareDailyResult(button));
     });
   }
@@ -1033,16 +1032,22 @@
         cache: "no-store",
       });
       const payload = await response.json().catch(() => ({}));
-      if (response.ok || payload.error === "already_shared") {
+      if (response.ok) {
         button.textContent = "✓";
-        button.title = "Résultat déjà partagé";
-        button.setAttribute("aria-label", "Résultat déjà partagé");
+        button.title = "Résultat publié. Cliquer pour le repartager";
+        button.setAttribute("aria-label", "Repartager mon résultat");
+        button.disabled = false;
+        window.setTimeout(() => {
+          if (!button.isConnected || button.dataset.loading === "1") return;
+          button.textContent = "↗";
+          button.title = "Publier mon résultat dans le salon du daily";
+          button.setAttribute("aria-label", "Publier mon résultat dans le salon du daily");
+        }, 1200);
         return;
       }
       const messages = {
         daily_not_complete: "Termine les quatre modes avant de partager.",
         share_channel_unavailable: "Le salon du daily est introuvable.",
-        share_in_progress: "Ton résultat est déjà en cours de publication.",
         share_failed: "Discord n’a pas pu publier le résultat.",
       };
       throw new Error(messages[payload.error] || "Partage impossible.");

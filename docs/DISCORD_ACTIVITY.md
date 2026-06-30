@@ -71,7 +71,7 @@ historiques `/.proxy/` restent disponibles pour les anciens clients.
 | `GET /daily/stream` | progression et classement via SSE ; |
 | `GET /daily/state` | fallback polling ; |
 | `POST /daily/presence` | heartbeat de présence. |
-| `POST /daily/share` | publication unique du bilan emoji dans le salon du ping. |
+| `POST /daily/share` | publication du bilan emoji dans le salon du ping. |
 
 ## Interface
 
@@ -95,8 +95,9 @@ par glisser-déposer ou avec les boutons haut/bas. Les pièces jointes sont serv
 
 Quand les quatre modes sont terminés, la ligne du joueur courant dans **En direct**
 affiche un bouton de partage. Le backend vérifie les quatre tentatives, construit un
-résumé emoji sans réponse, puis le bot le publie une seule fois dans le salon
-réellement utilisé par l'annonce quotidienne.
+résumé compact composé uniquement des quatre résultats, sans réponse, puis le bot le
+publie dans le salon réellement utilisé par l'annonce quotidienne. Le bouton reste
+disponible pour permettre un nouveau partage.
 
 ### Rich Presence
 

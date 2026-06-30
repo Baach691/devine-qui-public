@@ -311,20 +311,15 @@ def _format_daily_result_share(
         for character in user_name
     )
     lines = [
-        f"🎮 **Daily Guessr — {format_date_fr(date_str)}**",
+        f"**Daily Guessr — {format_date_fr(date_str)}**",
         f"**{safe_name}**",
         " ".join((
-            f"🌞 {'✅' if attempts[database.MODE_AUTHOR]['correct'] else '❌'}",
-            f"✍️ {'✅' if attempts[database.MODE_PHRASE]['correct'] else '❌'}",
-            f"🖼️ {'✅' if attempts[database.MODE_MEDIA]['correct'] else '❌'}",
-            f"🔀 {sequence_icons[sequence_score]}/5",
+            "✅" if attempts[database.MODE_AUTHOR]["correct"] else "❌",
+            "✅" if attempts[database.MODE_PHRASE]["correct"] else "❌",
+            "✅" if attempts[database.MODE_MEDIA]["correct"] else "❌",
+            sequence_icons[sequence_score],
         )),
     ]
-    wins = sum(1 for attempt in attempts.values() if attempt["correct"])
-    lines.append(
-        f"{'🏆' if wins == len(DAILY_MODE_SPECS) else '🏁'} "
-        f"**{wins}/{len(DAILY_MODE_SPECS)} modes réussis**"
-    )
     return "\n".join(lines)
 
 
@@ -705,11 +700,6 @@ def _daily_progress_view(
                 for option in challenge["options"]
             }
     mode_labels = {mode: label for mode, _icon, label in DAILY_MODE_SPECS}
-    viewer_shared = database.has_daily_result_share(
-        guild_id,
-        date_str,
-        viewer_user_id,
-    )
     out = []
 
     for user_id, participant in participants.items():
@@ -790,7 +780,6 @@ def _daily_progress_view(
             "details": details,
             "is_me": is_me,
             "can_share": is_me and daily_complete,
-            "shared": is_me and viewer_shared,
             "_completed_count": completed_count,
         })
 
@@ -1723,7 +1712,7 @@ def create_app(bot=None) -> Flask:
     @app.route("/daily/share", methods=["POST"])
     @app.route("/.proxy/daily/share", methods=["POST"])
     def daily_share():
-        """Publie une fois le bilan emoji du joueur dans le salon du ping."""
+        """Publie le bilan emoji du joueur dans le salon du ping."""
         data = request.get_json(silent=True) or {}
         payload = tokens.verify_token(data.get("token", ""), config.WEBAPP_SECRET)
         if payload is None:
@@ -1745,21 +1734,10 @@ def create_app(bot=None) -> Flask:
         }
         if any(attempt is None for attempt in attempts.values()):
             return jsonify({"error": "daily_not_complete"}), 409
-        if database.has_daily_result_share(guild_id, date_str, user_id):
-            return jsonify({"error": "already_shared", "shared": True}), 409
 
         channel_id = _daily_result_channel_id(guild_id, date_str)
         if channel_id is None:
             return jsonify({"error": "share_channel_unavailable"}), 503
-        if not database.reserve_daily_result_share(
-            guild_id,
-            date_str,
-            user_id,
-            channel_id,
-        ):
-            if database.has_daily_result_share(guild_id, date_str, user_id):
-                return jsonify({"error": "already_shared", "shared": True}), 409
-            return jsonify({"error": "share_in_progress"}), 409
 
         user_name = (
             attempts[database.MODE_AUTHOR].get("user_name")
@@ -1773,17 +1751,9 @@ def create_app(bot=None) -> Flask:
             content,
         )
         if message_id is None:
-            database.cancel_daily_result_share(guild_id, date_str, user_id)
             return jsonify({"error": "share_failed"}), 502
 
-        database.complete_daily_result_share(
-            guild_id,
-            date_str,
-            user_id,
-            message_id,
-        )
-        _publish_realtime((guild_id, date_str))
-        return jsonify({"ok": True, "shared": True})
+        return jsonify({"ok": True, "message_id": str(message_id)})
 
     @app.route("/daily/stream")
     @app.route("/.proxy/daily/stream")
